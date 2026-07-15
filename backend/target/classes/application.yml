@@ -1,0 +1,36 @@
+spring:
+  application:
+    name: blog-api
+
+  # banco em memoria: zera a cada restart, ideal para esta primeira entrega
+  datasource:
+    url: jdbc:h2:mem:blogdb;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+      # o envers le suas configuracoes com o prefixo completo org.hibernate.envers.
+      # store_data_at_delete guarda o estado do registro tambem na revisao de
+      # exclusao, para o historico mostrar como ele estava antes de ser apagado.
+      org.hibernate.envers.store_data_at_delete: true
+
+  # console web do h2 em http://localhost:8080/h2-console (jdbc url: jdbc:h2:mem:blogdb)
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+server:
+  port: 8080
+
+# origem do front-end (vite) liberada para chamadas cross-origin
+app:
+  cors:
+    allowed-origin: http://localhost:5173

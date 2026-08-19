@@ -1,4 +1,4 @@
-# saida de build do maven (um por servico, agora que sao tres)
+# saida de build do maven (um por servico, e agora sao quatro)
 target/
 
 # dependencias e build do front-end
@@ -14,5 +14,6 @@ dist/
 .vscode/
 .DS_Store
 
-# logs
+# logs dos processos subidos pelo ./subir.sh
+.logs/
 *.log

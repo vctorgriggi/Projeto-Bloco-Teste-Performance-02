@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.ActiveProfiles;
 
 import java.util.List;
 
@@ -14,7 +15,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 // testes da persistencia do post: os valores padrao ao criar, a transicao de
 // publicacao, a ordenacao da consulta derivada e o travamento otimista.
+//
+// o @ActiveProfiles e obrigatorio: fora do perfil de teste, o application.yml manda
+// buscar as propriedades no config server, e o teste passaria a exigir aquele processo
+// no ar.
 @DataJpaTest
+@ActiveProfiles("test")
 @Import(PersistenceConfig.class)
 class PostRepositoryTest {
 

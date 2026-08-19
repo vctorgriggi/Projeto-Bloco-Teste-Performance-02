@@ -1,0 +1,25 @@
+# ---------------------------------------------------------------------------------
+# propriedades do microsservico (spring.application.name = engagement-service).
+# ---------------------------------------------------------------------------------
+
+eureka:
+  client:
+    # publica o resultado do health check do actuator no registro, para o eureka marcar
+    # a instancia como fora do ar quando o banco cair, e nao apenas quando o processo
+    # morrer
+    healthcheck:
+      enabled: true
+  instance:
+    # batidas mais frequentes que o padrao (30s/90s) para a queda do servico aparecer
+    # rapido durante a demonstracao
+    lease-renewal-interval-in-seconds: 10
+    lease-expiration-duration-in-seconds: 20
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always

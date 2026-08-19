@@ -2,9 +2,21 @@ spring:
   application:
     name: blog-api
 
+  cloud:
+    openfeign:
+      # liga o circuit breaker nos clientes feign. sem isto, o fallbackFactory declarado
+      # no @FeignClient e simplesmente ignorado -- a chamada falha crua.
+      #
+      # fica aqui, e nao no config server, porque nao e ajuste de ambiente: e uma decisao
+      # de como o codigo se comporta, e desligar isto por configuracao quebraria o
+      # contrato que os testes do fallback garantem. os TIMEOUTS, que sao ajuste, estao
+      # centralizados em blog-api.yml.
+      circuitbreaker:
+        enabled: true
+
   # banco deste servico: posts e autores. comentarios e reacoes vivem no banco do
-  # engagement-service, e nao ha juncao possivel entre os dois -- e essa separacao
-  # que torna os dois processos independentes de verdade.
+  # engagement-service, e nao ha juncao possivel entre os dois -- e essa separacao que
+  # torna os dois processos independentes de verdade.
   datasource:
     url: jdbc:h2:mem:blogdb;DB_CLOSE_DELAY=-1
     driver-class-name: org.h2.Driver
@@ -29,82 +41,59 @@ spring:
       enabled: true
       path: /h2-console
 
-  cloud:
-    openfeign:
-      # liga o circuit breaker nos clientes feign. sem isto, o fallbackFactory
-      # declarado no @FeignClient e simplesmente ignorado -- a chamada falha crua.
-      circuitbreaker:
-        enabled: true
-      client:
-        config:
-          default:
-            # os timeouts do http precisam ser menores que o do time limiter do
-            # resilience4j (abaixo), senao o circuito estoura antes de o proprio
-            # cliente desistir e a causa da falha fica confusa no log.
-            connect-timeout: 2000
-            read-timeout: 3000
-            logger-level: basic
-
-# resiliencia da chamada ao engajamento.
-#
-# os dois blocos abaixo usam a configuracao "default" de proposito: o spring cloud
-# cria um circuito por metodo do cliente feign, com nomes derivados da assinatura, e
-# nomear cada um seria repeticao inutil. a politica e a mesma para todos.
-resilience4j:
-  circuitbreaker:
-    configs:
-      default:
-        sliding-window-size: 8
-        minimum-number-of-calls: 4          # nao abre o circuito no primeiro tropeco
-        failure-rate-threshold: 50          # metade das chamadas falhando e o bastante
-        wait-duration-in-open-state: 10s    # depois disso, tenta de novo
-        permitted-number-of-calls-in-half-open-state: 2
-        # erros de negocio que atravessaram a fronteira (um comentario que nao
-        # existe, uma reacao repetida) NAO sao falha do servico. sem esta lista, um
-        # leitor insistindo em reagir duas vezes abriria o circuito e derrubaria o
-        # engajamento para todo mundo.
-        ignore-exceptions:
-          - com.blog.shared.exception.ResourceNotFoundException
-          - com.blog.shared.exception.BusinessRuleException
-          - com.blog.shared.exception.InvalidRequestException
-
-  timelimiter:
-    configs:
-      default:
-        # o padrao do time limiter e 1 segundo, curto demais para uma chamada http
-        # real: em uma maquina carregada, chamadas legitimas comecariam a ser
-        # cortadas e o circuito abriria sem que nada estivesse errado.
-        timeout-duration: 5s
-        cancel-running-future: true
-
-# descoberta de servicos: e o registro que diz onde o engagement-service esta.
-eureka:
-  client:
-    service-url:
-      defaultZone: http://localhost:8761/eureka/
-    # o padrao busca a tabela de instancias a cada 30s. subindo os tres processos
-    # juntos, isso significa ate meio minuto em que o monolito ainda nao viu o
-    # engajamento e responde 503 -- correto, mas confuso de demonstrar. 10s deixa a
-    # subida e a recuperacao visiveis sem inundar o registro de requisicoes.
-    registry-fetch-interval-seconds: 10
-  instance:
-    prefer-ip-address: true
-
 server:
   port: 8080
 
-# origem do front-end (vite) liberada para chamadas cross-origin. continua sendo uma
-# so porque o navegador conversa apenas com este servico: o engajamento e alcancado
-# por dentro, servidor a servidor.
-app:
-  cors:
-    allowed-origin: http://localhost:5173
-
-# endereco fixo do microsservico. vazio (o padrao) significa "resolva pelo eureka",
-# que e o caminho normal. preencher aqui -- ou passar
-# --engagement.service.url=http://localhost:8081 na linha de comando -- faz o cliente
-# ir direto ao endereco, o que permite rodar a stack sem subir o servidor de
-# descoberta. e uma saida de emergencia, nao o modo de operacao.
+# endereco fixo do microsservico. vazio (o padrao) significa "resolva pelo eureka", que e
+# o caminho normal. preencher aqui -- ou passar
+# --engagement.service.url=http://localhost:8081 na linha de comando -- faz o cliente ir
+# direto ao endereco, o que permite rodar sem o servidor de descoberta. e uma saida de
+# emergencia, nao o modo de operacao.
 engagement:
   service:
     url: ""
+
+---
+# ---------------------------------------------------------------------------------
+# a busca da configuracao no servidor central.
+#
+# fica em um documento separado, ativado apenas FORA do perfil de teste, e a razao e
+# tecnica: o spring resolve o spring.config.import muito cedo, antes de ler
+# application-test.yml -- entao desligar o cliente por ali chegaria tarde e os testes
+# passariam a exigir um config server no ar. condicionar o proprio import ao perfil
+# resolve isso e continua valendo quando os testes rodam pela IDE, sem depender de
+# nenhuma flag na linha de comando.
+#
+# o import NAO e opcional de proposito. um servico que subisse sem as politicas que
+# espera estaria rodando com um comportamento diferente do pretendido, e descobrir isso
+# em producao e pior do que nao subir. o spring-retry no classpath, com o fail-fast
+# abaixo, faz o servico ESPERAR o config server em vez de morrer quando a ordem de
+# subida se inverte -- ate 20 tentativas, com 1 a 2 segundos entre elas.
+# ---------------------------------------------------------------------------------
+spring:
+  config:
+    activate:
+      on-profile: "!test"
+    import: "configserver:${CONFIG_SERVER_URL:http://localhost:8888}"
+
+  cloud:
+    config:
+      fail-fast: true
+      retry:
+        max-attempts: 20
+        initial-interval: 1000
+        max-interval: 2000
+
+# ---------------------------------------------------------------------------------
+# o que este arquivo NAO tem mais, e onde foi parar:
+#
+#   eureka.client.service-url          -> config-server, application.yml (coringa)
+#   eureka.instance.prefer-ip-address  -> config-server, application.yml (coringa)
+#   eureka.client.registry-fetch-...   -> config-server, blog-api.yml
+#   app.cors.allowed-origin            -> config-server, blog-api.yml
+#   spring.cloud.openfeign.client...   -> config-server, blog-api.yml (timeouts)
+#   resilience4j.*                     -> config-server, blog-api.yml
+#
+# o que sobrou aqui e o que define ESTE servico: o nome, o banco, a porta e as decisoes
+# de codigo. o que saiu e o que muda entre ambientes.
+# ---------------------------------------------------------------------------------

@@ -54,11 +54,12 @@ Este projeto aumenta a complexidade do sistema e enriquece a experiência práti
 | Atualização do modelo de domínio | novo aggregate `Reaction` e o `Comment` migrado, em [engagement-service/src/main/java/com/blog/engagement/domain/](engagement-service/src/main/java/com/blog/engagement/domain/); modelo e dependências redesenhados em [docs/MICROSSERVICO.md](docs/MICROSSERVICO.md) e [docs/ARQUITETURA.md](docs/ARQUITETURA.md) |
 | Endpoints da API REST | rotas de reação e de status no monólito ([ReactionController](backend/src/main/java/com/blog/engagement/web/ReactionController.java), [EngagementStatusController](backend/src/main/java/com/blog/engagement/web/EngagementStatusController.java)) e a API própria do microsserviço ([engagement-service/.../web/](engagement-service/src/main/java/com/blog/engagement/web/)); tabelas em [README.md](README.md) e [docs/MICROSSERVICO.md](docs/MICROSSERVICO.md) |
 | Microsserviço com Spring Boot | projeto [engagement-service/](engagement-service/), processo próprio na porta 8081 com banco próprio |
-| Spring Cloud | Eureka em [discovery-server/](discovery-server/), OpenFeign + LoadBalancer + Resilience4j no [EngagementClient](backend/src/main/java/com/blog/engagement/client/EngagementClient.java) e na configuração em [backend/src/main/resources/application.yml](backend/src/main/resources/application.yml) |
+| Spring Cloud — comunicação distribuída | Eureka em [discovery-server/](discovery-server/), OpenFeign + LoadBalancer + Resilience4j no [EngagementClient](backend/src/main/java/com/blog/engagement/client/EngagementClient.java) |
+| Spring Cloud — configuração distribuída | Config Server em [config-server/](config-server/), com as propriedades de ambiente dos dois serviços em [config-server/src/main/resources/config/](config-server/src/main/resources/config/) |
 | Repositórios dedicados | [CommentRepository](engagement-service/src/main/java/com/blog/engagement/repository/CommentRepository.java) e [ReactionRepository](engagement-service/src/main/java/com/blog/engagement/repository/ReactionRepository.java), com consulta de agregação e projeção por interface |
 | Componentes front-end | [ReactionBar.jsx](frontend/src/components/ReactionBar.jsx), [ServiceBadge.jsx](frontend/src/components/ServiceBadge.jsx) e a degradação graciosa em [PostPage.jsx](frontend/src/pages/PostPage.jsx) |
-| Testes | 89 testes nos três serviços; estratégia descrita em [docs/MICROSSERVICO.md](docs/MICROSSERVICO.md) |
-| Demonstração | roteiro passo a passo na seção "demonstração" de [docs/MICROSSERVICO.md](docs/MICROSSERVICO.md) |
+| Testes | 93 testes nos quatro serviços; estratégia descrita em [docs/MICROSSERVICO.md](docs/MICROSSERVICO.md) |
+| Demonstração | [subir.sh](subir.sh) sobe a stack em um comando; roteiro passo a passo na seção "demonstração" de [docs/MICROSSERVICO.md](docs/MICROSSERVICO.md) |
 
 ---
 

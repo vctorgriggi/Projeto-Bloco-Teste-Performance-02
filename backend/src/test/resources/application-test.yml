@@ -1,6 +1,6 @@
-# perfil usado pelos testes. mantem o mesmo h2 em memoria da aplicacao, apenas com o
-# log de sql desligado para a saida dos testes ficar limpa. o DataSeeder esta anotado
-# com @Profile("!test"), entao nao roda aqui e os testes partem de um banco vazio.
+# perfil usado pelos testes. mantem o mesmo h2 em memoria da aplicacao, apenas com o log
+# de sql desligado para a saida dos testes ficar limpa. o DataSeeder esta anotado com
+# @Profile("!test"), entao nao roda aqui e os testes partem de um banco vazio.
 spring:
   jpa:
     show-sql: false
@@ -8,13 +8,37 @@ spring:
       hibernate:
         format_sql: false
 
-# o cliente do eureka fica desligado nos testes: nenhum teste deve depender de um
-# servidor de descoberta rodando na maquina, e sem isto o contexto gastaria segundos
-# em retentativas de registro a cada classe de teste.
+  # sao necessarias DUAS coisas para os testes nao dependerem do config server, e elas
+  # resolvem problemas diferentes:
+  #
+  # 1. o application.yml condiciona o spring.config.import ao perfil (!test). isso e o que
+  #    evita a chamada http de verdade -- sem essa parte, o fail-fast e o retry fariam cada
+  #    classe de teste gastar mais de um minuto tentando alcancar o servidor.
+  # 2. esta propriedade aqui. o spring cloud instala um guard que exige um
+  #    spring.config.import declarado sempre que o cliente de configuracao esta no
+  #    classpath, e sem ela o contexto falha com "No spring.config.import set" -- agora
+  #    justamente porque o import foi (corretamente) omitido.
+  cloud:
+    config:
+      enabled: false
+
+# como as propriedades de ambiente agora vem do config server, e ele nao e consultado aqui,
+# o perfil de teste precisa fornecer o que o contexto exige para subir. e uma consequencia
+# real de centralizar configuracao: o ambiente de teste passa a ser um ambiente como os
+# outros, e tem que declarar o que precisa.
 #
-# a descoberta em si (o bean DiscoveryClient) continua no contexto, so sem nenhum
-# cliente por tras. e justamente o cenario que o EngagementStatusService trata,
-# devolvendo zero instancia registrada em vez de quebrar.
+# esta e obrigatoria porque o CorsConfig a le com @Value sem valor padrao.
+app:
+  cors:
+    allowed-origin: http://localhost:5173
+
+# o cliente do eureka fica desligado nos testes: nenhum teste deve depender de um servidor
+# de descoberta rodando na maquina, e sem isto o contexto gastaria segundos em
+# retentativas de registro a cada classe de teste.
+#
+# a descoberta em si (o bean DiscoveryClient) continua no contexto, so sem nenhum cliente
+# por tras. e justamente o cenario que o EngagementStatusService trata, devolvendo zero
+# instancia registrada em vez de quebrar.
 eureka:
   client:
     enabled: false
@@ -23,9 +47,9 @@ eureka:
 
 # os testes de integracao trocam o EngagementClient por um substituto, entao nenhuma
 # chamada http sai daqui. o endereco existe para o cliente feign ser construido sem
-# consultar a descoberta, e aponta para uma porta invalida de proposito: se algum
-# teste esquecer de substituir o cliente, a chamada falha na hora em vez de ficar
-# pendurada esperando timeout.
+# consultar a descoberta, e aponta para uma porta invalida de proposito: se algum teste
+# esquecer de substituir o cliente, a chamada falha na hora em vez de ficar pendurada
+# esperando timeout.
 engagement:
   service:
     url: http://localhost:0

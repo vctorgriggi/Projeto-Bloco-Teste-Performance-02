@@ -10,12 +10,15 @@ o monólito descrito abaixo continua existindo e continua sendo o coração do s
 
 a aplicação é um blog simples. autores escrevem posts, posts começam como rascunho e podem ser publicados, leitores deixam comentários e reagem aos posts. são quatro entidades no total: autor, post, comentário e reação — esta última nasceu na terceira entrega, já dentro do microsserviço.
 
-o sistema tem quatro peças que rodam separadas:
+o sistema tem cinco peças que rodam separadas:
 
 - **`backend` (blog-api, porta 8080)** — o monólito Spring Boot: posts, autores, e a API que o navegador consome
 - **`engagement-service` (porta 8081)** — o microsserviço Spring Boot: comentários e reações
 - **`discovery-server` (porta 8761)** — o registro de serviços (Eureka), por onde os dois se encontram
+- **`config-server` (porta 8888)** — a configuração central dos dois serviços de negócio
 - **`frontend` (porta 5173)** — a aplicação React (Vite), que fala apenas com o monólito
+
+os dois do meio são infraestrutura: não têm domínio nem banco. existem porque, com mais de um processo, aparecem duas perguntas que um monólito nunca precisou fazer — *onde está o outro serviço?* e *de onde vêm as propriedades dele?*
 
 cada serviço tem o seu próprio H2 em memória: `blogdb` no monólito, `engagementdb` no microsserviço. um banco por serviço é o que torna a separação real, e não apenas de código — não existe junção possível entre `posts` e `comments`. os bancos zeram a cada restart, o que é proposital: queremos algo que rode sem instalar nada. trocar por um banco real é mexer no `application.yml` de cada serviço, porque o acesso a dados passa todo pela camada de repositório.
 
@@ -251,6 +254,7 @@ as peças de Spring Cloud que sustentam a conversa:
 - **OpenFeign** para a chamada: a fronteira de rede é declarada como uma interface Java
 - **Spring Cloud LoadBalancer** (junto do Eureka) para escolher entre instâncias
 - **Resilience4j** para o circuit breaker: quando o engajamento cai, as chamadas falham rápido em vez de segurar threads
+- **Spring Cloud Config** para a configuração: cada propriedade de ambiente passa a ter um dono. o endereço do Eureka estava escrito nos dois serviços, e duas cópias de um endereço são uma delas esperando para ficar desatualizada. a linha que usei para dividir: ajuste de **ambiente** (endereço, limite, intervalo) vai para o servidor central; decisão de **código** (o banco, a porta, ligar o circuit breaker) fica no serviço
 
 e as decisões que a distribuição obrigou a tomar:
 
@@ -271,4 +275,4 @@ o detalhamento de tudo isso — topologia, configuração, formatos, testes e o 
 - histórico de dados com Hibernate Envers, consultado por repositórios Spring Data (`RevisionRepository`); a auditoria do comentário migrou junto com a entidade
 - regras de negócio dentro do service e do domínio do serviço que é dono delas, nunca no controller e nunca duplicadas do outro lado da fronteira
 - tratamento de erro e formato de resposta centralizados, e o mesmo envelope nos dois serviços
-- descoberta de serviços em vez de endereço fixo; circuit breaker em vez de esperar timeout; evento de domínio em vez de chamada direta entre contextos
+- descoberta de serviços em vez de endereço fixo; configuração central em vez de propriedade duplicada; circuit breaker em vez de esperar timeout; evento de domínio em vez de chamada direta entre contextos

@@ -50,6 +50,25 @@
 
         <!-- spring cloud, terceira entrega -->
 
+        <!-- cliente do config server: busca as propriedades de ambiente deste
+             servico no servidor central antes de terminar de inicializar -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-config</artifactId>
+        </dependency>
+
+        <!-- spring-retry (e o aop que ele usa) fazem o cliente de configuracao
+             retentar quando o config server ainda nao esta no ar, em vez de o servico
+             morrer no startup por causa da ordem em que os processos subiram -->
+        <dependency>
+            <groupId>org.springframework.retry</groupId>
+            <artifactId>spring-retry</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-aop</artifactId>
+        </dependency>
+
         <!-- cliente de descoberta: o monolito se registra no eureka e, mais
              importante, consulta o registro para achar o engagement-service pelo
              nome, sem host nem porta escritos no codigo -->

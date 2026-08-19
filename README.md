@@ -9,7 +9,7 @@ a explicação completa da arquitetura, com os diagramas de componentes e de seq
 ## stack
 
 - Java 21 e Spring Boot 3.3 (web, data jpa, validation)
-- Spring Cloud 2023.0.3: Eureka (descoberta), OpenFeign (chamada declarativa), LoadBalancer, Resilience4j (circuit breaker)
+- Spring Cloud 2023.0.3: Config (configuração central), Eureka (descoberta), OpenFeign (chamada declarativa), LoadBalancer, Resilience4j (circuit breaker)
 - H2 em memória, um banco por serviço (zera a cada restart, sem precisar instalar banco)
 - Hibernate Envers e Spring Data Envers para o histórico de dados
 - React 18 com Vite
@@ -17,16 +17,21 @@ a explicação completa da arquitetura, com os diagramas de componentes e de seq
 
 ## estrutura
 
-o sistema são três processos de back-end e um front-end. cada serviço é um projeto Maven independente, com o seu próprio wrapper — é o que significa poder ser implantado sozinho.
+o sistema são quatro processos de back-end e um front-end. cada serviço é um projeto Maven independente, com o seu próprio wrapper — é o que significa poder ser implantado sozinho.
 
 ```
 .
-├── discovery-server     registro de serviços (Eureka)          :8761
-├── backend              o monólito: posts e autores            :8080
-├── engagement-service   o microsserviço: comentários e reações  :8081
-├── frontend             a interface (React + Vite)             :5173
-└── docs                 documentação de arquitetura
+├── config-server        configuração central (Spring Cloud Config)  :8888
+├── discovery-server     registro de serviços (Eureka)               :8761
+├── backend              o monólito: posts e autores                 :8080
+├── engagement-service   o microsserviço: comentários e reações       :8081
+├── frontend             a interface (React + Vite)                  :5173
+├── docs                 documentação de arquitetura
+├── subir.sh             sobe tudo na ordem certa
+└── derrubar.sh          encerra tudo
 ```
+
+os dois primeiros são infraestrutura: não têm domínio nem banco, e existem para resolver o que só aparece com mais de um processo — *onde está o outro serviço?* e *de onde vêm as propriedades dele?*
 
 ```mermaid
 flowchart LR
@@ -34,6 +39,8 @@ flowchart LR
     MONO -->|"HTTP via Feign"| ENG["engagement-service :8081<br/>comentários, reações"]
     MONO -.-> EUR[["discovery-server :8761"]]
     ENG -.-> EUR
+    MONO -.propriedades.-> CFG[["config-server :8888"]]
+    ENG -.propriedades.-> CFG
     MONO --> DB1[("blogdb")]
     ENG --> DB2[("engagementdb")]
 ```
@@ -44,9 +51,37 @@ o navegador fala **apenas** com o monólito; o engajamento é alcançado por den
 
 precisa de um JDK 21 e do Node 18+ instalados. o Maven vem junto pelo wrapper.
 
-são quatro terminais, e **a ordem importa** — suba a descoberta primeiro, para que os dois serviços encontrem o registro já no startup.
+### tudo de uma vez
 
-### 1. servidor de descoberta
+```bash
+./subir.sh              # sobe os quatro serviços e o front-end
+./subir.sh --sem-front  # apenas os serviços
+./derrubar.sh           # encerra tudo
+```
+
+o script sobe na ordem certa, espera cada peça responder antes de seguir, instala as dependências do front se faltarem e avisa quando o monólito e o microsserviço se encontraram. os logs de cada processo ficam em `.logs/`. se um serviço morrer no startup, ele mostra o fim do log na hora, em vez de esperar o timeout.
+
+### ou, um terminal por serviço
+
+**a ordem importa**: o config server serve as propriedades dos serviços de negócio, e o registro precisa existir para eles se encontrarem. subir fora de ordem funciona — o cliente de configuração tem retry, e o monólito responde 503 enquanto não vê o engajamento — mas demora e polui o log.
+
+### 1. servidor de configuração
+
+```bash
+cd config-server
+./mvnw spring-boot:run
+```
+
+sobe em `http://localhost:8888`. para ver o que ele entrega a cada serviço:
+
+```bash
+curl localhost:8888/blog-api/default
+curl localhost:8888/engagement-service/default
+```
+
+as propriedades ficam em [config-server/src/main/resources/config/](config-server/src/main/resources/config/): `application.yml` vale para todos os clientes, e `blog-api.yml` / `engagement-service.yml` para cada um.
+
+### 2. servidor de descoberta
 
 ```bash
 cd discovery-server
@@ -55,7 +90,7 @@ cd discovery-server
 
 o painel do Eureka fica em `http://localhost:8761`. é onde se vê quais serviços estão registrados.
 
-### 2. microsserviço de engajamento
+### 3. microsserviço de engajamento
 
 ```bash
 cd engagement-service
@@ -64,7 +99,7 @@ cd engagement-service
 
 sobe em `http://localhost:8081` e semeia alguns comentários e reações de exemplo. o console do banco fica em `http://localhost:8081/h2-console` (JDBC URL `jdbc:h2:mem:engagementdb`, usuário `sa`, sem senha).
 
-### 3. monólito
+### 4. monólito
 
 ```bash
 cd backend
@@ -80,7 +115,7 @@ curl localhost:8080/api/engagement/status
 # {"service":"engagement-service","available":true,"registeredInstances":1,...}
 ```
 
-### 4. front-end
+### 5. front-end
 
 ```bash
 cd frontend
@@ -92,7 +127,7 @@ a interface abre em `http://localhost:5173`. suba os serviços antes, senão as 
 
 ### rodando sem o servidor de descoberta
 
-se quiser subir só dois processos, é possível apontar o monólito direto para o microsserviço, sem Eureka:
+é possível apontar o monólito direto para o microsserviço, sem Eureka:
 
 ```bash
 cd backend
@@ -100,6 +135,8 @@ cd backend
 ```
 
 é uma saída de emergência, útil para uma verificação rápida, e não o modo de operação: com endereço fixo você perde a descoberta e o balanceamento entre instâncias, que são justamente o que o Spring Cloud está resolvendo.
+
+o config server, por outro lado, **não** é opcional para os serviços de negócio: eles esperam por ele no startup (com retry) em vez de subir com metade das propriedades que esperavam. isso é deliberado, e a justificativa está em [docs/MICROSSERVICO.md](docs/MICROSSERVICO.md). se precisar apontar para outro endereço, use `CONFIG_SERVER_URL`.
 
 ## api
 
@@ -198,6 +235,7 @@ além de mudar de endereço, o engajamento ganhou uma capacidade nova, as **rea�
 o que a distribuição obrigou a resolver, e que não existia antes:
 
 - **encontrar o outro serviço** sem endereço fixo no código — Eureka e o `@FeignClient` pelo nome lógico
+- **ter um dono para cada propriedade** — o endereço do Eureka estava duplicado nos dois serviços; agora ajuste de ambiente vive no Config Server e decisão de código fica no serviço
 - **falhar bem** quando ele não responde — circuit breaker com Resilience4j, e 503 em vez de 500 ou de uma lista vazia mentindo que o post não tem conversa
 - **preservar o significado do erro** na travessia — 404 continua 404 e 409 continua 409, com a mensagem escrita pelo serviço dono da regra
 - **manter os dois bancos coerentes** sem chave estrangeira — apagar um post publica um evento de domínio que dispara a limpeza do engajamento no outro serviço
@@ -215,19 +253,20 @@ as reações não são auditadas: auditar cada clique encheria a tabela de hist�
 
 ## testes
 
-são 89 testes automatizados, e cada serviço roda os seus a partir do próprio diretório com `./mvnw test`.
+são 93 testes automatizados, e cada serviço roda os seus a partir do próprio diretório com `./mvnw test`.
 
 | onde                | quantos | o que cobre                                                        |
 | ------------------- | ------- | ------------------------------------------------------------------ |
 | `backend`           | 51      | persistência, histórico, tratamento de erro e a fronteira de rede   |
 | `engagement-service`| 37      | repositórios, regras de reação, API e a auditoria do comentário     |
+| `config-server`     | 4       | serve a configuração de cada serviço pelos nomes que os clientes usam |
 | `discovery-server`  | 1       | o registro sobe e responde                                          |
 
 na camada de persistência há testes de repositório com `@DataJpaTest` (consultas derivadas, agregação por tipo, restrições de unicidade, valores padrão e travamento otimista) e testes de histórico com `@SpringBootTest` que exercitam o Envers de ponta a ponta — o ciclo de vida completo de um post e o endpoint de consulta.
 
 na integração distribuída, os testes de API do monólito trocam o cliente do microsserviço por um dublê, o que permite cobrir justamente os caminhos difíceis de provocar de outra forma: o 503 quando o engajamento cai, o 404 que atravessa a fronteira sem virar erro de infraestrutura, e a verificação de que o post é validado **antes** de qualquer chamada de rede. o `EngagementErrorDecoder` e o fallback têm testes de unidade próprios.
 
-o que os testes automatizados não cobrem é a conversa real entre os três processos — isso foi verificado à mão, e o roteiro da demonstração está em [docs/MICROSSERVICO.md](docs/MICROSSERVICO.md).
+o que os testes automatizados não cobrem é a conversa real entre os processos no ar — isso foi verificado à mão, e o roteiro da demonstração está em [docs/MICROSSERVICO.md](docs/MICROSSERVICO.md).
 
 ## erros
 

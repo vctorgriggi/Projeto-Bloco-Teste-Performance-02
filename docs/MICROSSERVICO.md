@@ -16,15 +16,18 @@ os três pontos são o retrato de um acoplamento baixo. onde há uma dependênci
 
 além de mudar de processo, o engajamento ganhou uma capacidade que ele não tinha: **reações**. era o teste que faltava. mover código existente prova que a fronteira estava no lugar; desenvolver algo novo do outro lado prova que o serviço é autônomo de verdade — a reação nasceu, cresceu e é validada inteiramente dentro dele, sem que o monólito precise saber quais tipos existem nem qual é a regra.
 
-## os três processos
+## os quatro processos
 
-o sistema deixou de ser um back-end e passou a ser três processos, cada um com o seu próprio ciclo de vida:
+o sistema deixou de ser um back-end e passou a ser quatro processos, cada um com o seu próprio ciclo de vida:
 
 | processo | porta | papel | banco |
 | --- | --- | --- | --- |
+| `config-server` | 8888 | configuração central dos serviços (Spring Cloud Config) | — |
 | `discovery-server` | 8761 | registro de serviços (Eureka Server) | — |
 | `backend` (blog-api) | 8080 | monólito: posts e autores; porta de entrada da API | `blogdb` |
 | `engagement-service` | 8081 | microsserviço: comentários e reações | `engagementdb` |
+
+os dois primeiros são infraestrutura: não têm domínio, não têm banco e existem para resolver problemas que só aparecem quando há mais de um processo — *onde está o outro serviço?* e *de onde vêm as propriedades dele?*. os dois últimos são os serviços de negócio, e são clientes dos dois primeiros.
 
 são **dois bancos distintos**, e isso é o ponto mais importante da separação. não existe junção possível entre `posts` e `comments`, nem chave estrangeira entre eles. um banco por serviço é o que impede a independência de ser só aparente: se os dois processos falassem com o mesmo schema, qualquer mudança de tabela voltaria a acoplar os dois deploys.
 
@@ -42,6 +45,7 @@ flowchart TD
     end
 
     EUREKA[["discovery-server :8761<br/>(Eureka)"]]
+    CONFIG[["config-server :8888<br/>(Spring Cloud Config)"]]
     DB1[("blogdb<br/>posts, authors")]
     DB2[("engagementdb<br/>comments, reactions")]
 
@@ -51,6 +55,8 @@ flowchart TD
     ENGCLI -.consulta o registro.-> EUREKA
     ENG -.registra-se.-> EUREKA
     AUTH -.registra-se.-> EUREKA
+    Mono -.busca propriedades no startup.-> CONFIG
+    Micro -.busca propriedades no startup.-> CONFIG
     AUTH --> DB1
     ENG --> DB2
 ```
@@ -59,7 +65,7 @@ note o que o navegador **não** faz: ele não fala com o microsserviço. há uma
 
 ## o que o Spring Cloud resolve aqui
 
-o Spring Cloud entra em quatro pontos, cada um respondendo a um problema que só existe porque o sistema virou distribuído. a versão é o trem **2023.0.3 (Leyton)**, que é a linha compatível com o Spring Boot 3.3.x usado pelos três serviços — o mesmo BOM é importado nos três `pom.xml`.
+o Spring Cloud entra em quatro pontos, cada um respondendo a um problema que só existe porque o sistema virou distribuído. a versão é o trem **2023.0.3 (Leyton)**, que é a linha compatível com o Spring Boot 3.3.x usado por todos os serviços — o mesmo BOM é importado em cada `pom.xml`.
 
 ### 1. descoberta de serviços (Eureka)
 
@@ -115,9 +121,59 @@ resilience4j:
 
 a lista `ignore-exceptions` é o detalhe menos óbvio e o mais importante desse bloco. um comentário que não existe (404) ou uma reação repetida (409) são respostas **corretas** do outro serviço; se contassem como falha, um leitor insistindo em reagir duas vezes abriria o circuito e derrubaria o engajamento para todo mundo. saber distinguir "o serviço falhou" de "o serviço disse não" é o que separa um circuit breaker útil de um sabotador.
 
-### 4. configuração distribuída
+### 4. configuração distribuída (Spring Cloud Config)
 
-o Spring Cloud também cobre a configuração: o registro de serviços é o que substitui endereços fixos espalhados por arquivos de propriedade. o passo seguinte natural seria um **Config Server**, centralizando as propriedades dos três serviços em um repositório único — está fora do escopo desta entrega, e o motivo é honesto: com três processos e um punhado de propriedades, um quarto processo custaria mais em complexidade de execução do que resolveria.
+o problema: a mesma propriedade passa a existir em vários lugares. o endereço do Eureka estava escrito no `application.yml` do monólito **e** no do microsserviço — duas cópias que ninguém garantia que continuariam iguais. multiplique por ambiente (desenvolvimento, homologação, produção) e por serviço, e a configuração vira o lugar onde os erros se esconderem.
+
+a solução: um `config-server` com `@EnableConfigServer` que serve as propriedades por HTTP. cada serviço pede as suas no startup, identificando-se pelo `spring.application.name`:
+
+```yaml
+# no application.yml do monólito e do microsserviço
+spring:
+  config:
+    import: "configserver:${CONFIG_SERVER_URL:http://localhost:8888}"
+```
+
+o servidor responde com dois arquivos combinados: o `application.yml` (coringa, comum a todos os clientes) e o `<nome-do-serviço>.yml`. dá para ver exatamente o que cada serviço recebe:
+
+```bash
+curl localhost:8888/blog-api/default
+# propertySources: ["blog-api.yml", "application.yml"]
+#   app.cors.allowed-origin = http://localhost:5173
+#   resilience4j.circuitbreaker.configs.default.wait-duration-in-open-state = 10s
+#   eureka.client.service-url.defaultZone = http://localhost:8761/eureka/
+```
+
+**o critério de o que centralizar.** não foi "tudo": foi uma linha divisória entre dois tipos de propriedade.
+
+> vai para o Config Server o que é ajuste de **ambiente** — endereço, limite, intervalo, algo que muda entre a máquina de quem desenvolve e um servidor de produção sem que uma linha de código mude. fica no próprio serviço o que é decisão de **código** — o nome da aplicação, o banco que ele usa, a porta em que escuta, ligar ou não o circuit breaker nos clientes Feign.
+
+na prática:
+
+| propriedade | onde | por quê |
+| --- | --- | --- |
+| endereço do Eureka | `application.yml` (coringa) | os dois serviços precisam, e muda por ambiente |
+| `app.cors.allowed-origin` | `blog-api.yml` | outra porta em desenvolvimento, um domínio real em produção |
+| timeouts do Feign, políticas do Resilience4j | `blog-api.yml` | são knobs de operação: ajustar um limiar não deveria exigir recompilar |
+| intervalos de lease do Eureka | `engagement-service.yml` | ajuste fino de detecção de queda |
+| `spring.cloud.openfeign.circuitbreaker.enabled` | local, no serviço | não é ajuste: desligar isso quebraria o contrato que os testes do fallback garantem |
+| datasource, `server.port`, nome da aplicação | local, no serviço | definem *qual serviço é este*, não o ambiente onde roda |
+
+o `application.yml` de cada serviço termina com um comentário listando o que saiu dele e para onde foi — porque a pior versão de configuração centralizada é a que faz alguém procurar em três lugares antes de descobrir onde um valor mora.
+
+**o backend é o perfil `native`**, que lê de um diretório local, e não o padrão Git. o backend Git é o que se usa em produção (dá versionamento e auditoria das propriedades de graça); escolhi `native` para não exigir um segundo repositório só para guardar configuração, e a troca é mudar o perfil e apontar `spring.cloud.config.server.git.uri`.
+
+**o import não é opcional, de propósito.** um serviço que subisse sem a política de resiliência e sem a origem do CORS estaria rodando com um comportamento diferente do pretendido, e descobrir isso em produção é pior do que não subir. com `fail-fast: true` e `spring-retry` no classpath, o serviço **espera** o config server (até 20 tentativas) em vez de morrer quando a ordem de subida se inverte.
+
+**o efeito prático**, que é o que justifica o processo extra: mudar um valor não exige recompilar nem reempacotar nada. editar o arquivo no config server já muda o que ele serve na requisição seguinte:
+
+```bash
+# edita wait-duration-in-open-state de 10s para 30s no arquivo do config server
+curl -s localhost:8888/blog-api/default | grep wait-duration
+#   wait-duration-in-open-state = 30s      <- sem reiniciar o config server
+```
+
+o serviço cliente adota o valor novo no próximo startup. propagar sem reiniciar nem isso é possível com `@RefreshScope` e o endpoint `/actuator/refresh`, e é o passo seguinte natural — ficou de fora porque exigiria decidir, propriedade por propriedade, o que é seguro trocar com o serviço no ar.
 
 ## o caminho de uma requisição
 
@@ -461,15 +517,18 @@ com o engajamento fora do ar, o resultado é: o texto do post continua legível,
 
 ## testes
 
-são 89 testes automatizados, distribuídos pelos três serviços.
+são 93 testes automatizados, distribuídos pelos quatro serviços.
 
 | onde | quantos | o que cobre |
 | --- | --- | --- |
 | `backend` | 51 | os testes das entregas anteriores, mais a fronteira de rede |
 | `engagement-service` | 37 | repositórios, regras, API e auditoria do microsserviço |
+| `config-server` | 4 | serve a configuração de cada serviço pelos nomes que os clientes usam |
 | `discovery-server` | 1 | o registro sobe e responde |
 
 para rodar, em cada diretório: `./mvnw test`.
+
+os testes dos dois serviços de infraestrutura parecem triviais e não são. um erro no `config-server` — um caminho de busca errado, um arquivo cujo nome não casa com o `spring.application.name` de ninguém — **não aparece como falha dele**: aparece como um serviço de negócio subindo sem as propriedades que esperava, com o circuit breaker em valores padrão e o CORS recusando o front. por isso o teste não se contenta em subir o contexto: ele pede a configuração pelos mesmos nomes que os clientes usam e confere que os valores chegam, inclusive o caso do serviço sem arquivo próprio, que deve receber só o coringa.
 
 ### no monólito: testar a fronteira sem a rede
 
@@ -509,17 +568,46 @@ dois merecem destaque:
 - **`CommentAuditTest`** confirma que o Envers continua gravando em `comments_AUD` **dentro do microsserviço**, inclusive a revisão de exclusão com o estado preservado. a auditoria era uma conquista da segunda entrega e não podia se perder na mudança de processo — este teste é a garantia de que não se perdeu. como na entrega anterior, ele não é transacional, porque o Envers só grava a revisão no commit.
 - **`CommentApiTest.comentarioEmPostDesconhecido_eAceito_poisAValidacaoEDoOutroServico`** documenta em teste uma decisão que, sem explicação, pareceria um esquecimento: o microsserviço aceita um `postId` que não existe no monólito, porque quem valida a existência do post é o serviço dono do post.
 
-o perfil de teste dos dois serviços desliga o cliente do Eureka. nenhum teste deve depender de um servidor de descoberta rodando na máquina, e sem isso cada classe de teste gastaria segundos em retentativas de registro.
+o perfil de teste dos dois serviços de negócio desliga o cliente do Eureka **e** a busca de configuração. nenhum teste deve depender de infraestrutura rodando na máquina — do contrário a suíte deixa de rodar em um pipeline limpo.
+
+o segundo caso rendeu uma armadilha que vale registrar, porque não é óbvia e custou duas tentativas. `spring.cloud.config.enabled: false` no `application-test.yml` **não** basta: o Spring resolve o `spring.config.import` muito antes de ler os arquivos específicos de perfil, então a propriedade chega tarde e o serviço tenta a chamada de verdade — com `fail-fast` e retry, cada classe de teste gastava mais de um minuto antes de falhar. a solução tem duas partes, que resolvem problemas diferentes:
+
+1. o próprio `import` fica em um documento YAML condicionado ao perfil (`spring.config.activate.on-profile: "!test"`), o que evita a chamada HTTP. essa parte continua valendo quando os testes rodam pela IDE, sem depender de flag na linha de comando.
+2. `spring.cloud.config.enabled: false` no perfil de teste, que satisfaz um *guard* do Spring Cloud exigindo que um `spring.config.import` esteja declarado sempre que o cliente de configuração está no classpath — sem ela o contexto falha com `No spring.config.import set`, agora justamente porque o import foi (corretamente) omitido.
+
+há uma consequência de projeto nisso, e ela é honesta: **centralizar configuração torna o ambiente de teste um ambiente como os outros**, que tem de declarar o que precisa. `app.cors.allowed-origin` saiu do `application.yml` do monólito, e o `CorsConfig` a lê com `@Value` sem valor padrão — então o `application-test.yml` passou a fornecê-la. os dois testes `@DataJpaTest` do monólito, que não declaravam `@ActiveProfiles("test")`, também precisaram passar a declarar.
 
 ### o que os testes não cobrem
 
-os testes automatizados verificam cada serviço e a fronteira entre eles, mas não os três processos conversando de verdade — isso foi verificado à mão, subindo a stack (o roteiro está na seção seguinte). fechar essa lacuna pediria testes de contrato (Spring Cloud Contract) ou de integração com containers (Testcontainers), que é o passo seguinte natural e ficou fora desta entrega.
+os testes automatizados verificam cada serviço e a fronteira entre eles, mas não os processos conversando de verdade entre si — isso foi verificado à mão, subindo a stack (o roteiro está na seção seguinte). fechar essa lacuna pediria testes de contrato (Spring Cloud Contract) ou de integração com containers (Testcontainers), que é o passo seguinte natural e ficou fora desta entrega.
 
 ## demonstração
 
-o roteiro abaixo exercita a integração inteira. com os três processos no ar (as instruções estão no [README](../README.md)):
+o roteiro abaixo exercita a integração inteira. um comando sobe tudo na ordem certa e espera cada peça responder:
 
-**1. os serviços se encontraram**
+```bash
+./subir.sh
+```
+
+**1. a configuração é central, e dá para ver o que cada serviço recebe**
+
+```bash
+curl -s localhost:8888/blog-api/default
+```
+
+a resposta mostra as duas fontes combinadas (`blog-api.yml` e o coringa `application.yml`) e os valores que o monólito adotou. a prova de que ele **realmente** adotou, e não só de que o servidor respondeu, é o CORS: `app.cors.allowed-origin` não existe mais localmente, então uma requisição pré-flight só é liberada se a propriedade chegou.
+
+```bash
+curl -i -X OPTIONS localhost:8080/api/posts \
+  -H "Origin: http://localhost:5173" -H "Access-Control-Request-Method: GET"
+# 200 + Access-Control-Allow-Origin: http://localhost:5173
+
+curl -o /dev/null -w '%{http_code}\n' -X OPTIONS localhost:8080/api/posts \
+  -H "Origin: http://localhost:9999" -H "Access-Control-Request-Method: GET"
+# 403 -- origem não liberada
+```
+
+**2. os serviços se encontraram**
 
 ```bash
 curl -s localhost:8080/api/engagement/status
@@ -528,15 +616,15 @@ curl -s localhost:8080/api/engagement/status
 
 o painel do Eureka em `http://localhost:8761` mostra `BLOG-API` e `ENGAGEMENT-SERVICE` registrados.
 
-**2. dados de dois bancos na mesma tela**
+**3. dados de dois bancos na mesma tela**
 
 abra `http://localhost:5173/posts/1`. o texto do post vem do `blogdb`; a conversa e as reações vêm do `engagementdb`, através de uma chamada de rede.
 
-**3. as regras vivem onde deveriam**
+**4. as regras vivem onde deveriam**
 
 reaja duas vezes com o mesmo tipo: o 409 e a mensagem vêm do microsserviço. mande um tipo inventado: o 400 também. o monólito só repassa.
 
-**4. a queda de um serviço não derruba o sistema**
+**5. a queda de um serviço não derruba o sistema**
 
 pare o `engagement-service` (Ctrl+C) e recarregue a página do post:
 
@@ -553,11 +641,13 @@ chamada ao engagement-service nao completou: CallNotPermittedException:
 CircuitBreaker 'EngagementClientlistCommentsLong' is OPEN and does not permit further calls
 ```
 
-**5. a recuperação é automática**
+esse log é, de quebra, a segunda prova de que a configuração central foi aplicada: com os padrões do Resilience4j (janela de 100 chamadas, mínimo de 100 antes de avaliar), **oito falhas não abririam circuito nenhum**. o circuito só abre tão cedo porque `sliding-window-size: 8` e `minimum-number-of-calls: 4` vieram do `blog-api.yml` do config server.
+
+**6. a recuperação é automática**
 
 suba o `engagement-service` de novo. em cerca de 10 segundos (o `wait-duration-in-open-state`) o circuito fecha, o selo volta ao verde e a conversa reaparece — sem reiniciar o monólito nem o navegador.
 
-**6. a limpeza atravessa a fronteira**
+**7. a limpeza atravessa a fronteira**
 
 apague um post que tenha conversa. o log do monólito registra a limpeza no outro serviço, e o banco do engajamento fica sem os registros órfãos:
 
@@ -565,15 +655,17 @@ apague um post que tenha conversa. o log do monólito registra a limpeza no outr
 engajamento do post 2 limpo: 2 comentario(s) e 2 reacao(oes)
 ```
 
+para encerrar tudo: `./derrubar.sh`. ele mata pelas portas em escuta, e não só pelos pids anotados — o `spring-boot:run` forka uma JVM filha, e matar apenas o processo do Maven deixaria o serviço de pé com a porta ocupada, fazendo a subida seguinte falhar sem explicação óbvia.
+
 ## o que ficou de fora, e por quê
 
 lista honesta do que um sistema distribuído de verdade teria e este não tem:
 
-- **API Gateway** (Spring Cloud Gateway) — o monólito faz esse papel na mão. custo de um quarto processo não se paga com dois serviços.
-- **Config Server** — a configuração está em cada `application.yml`. mesmo raciocínio.
+- **API Gateway** (Spring Cloud Gateway) — o monólito faz esse papel na mão. com dois serviços de negócio, o processo extra não se paga; o lugar onde ele entraria é o `ReactionController` do monólito.
+- **propagação de configuração sem restart** (`@RefreshScope` + `/actuator/refresh`) — hoje o serviço adota um valor novo no próximo startup. fazê-lo em tempo de execução exigiria decidir, propriedade por propriedade, o que é seguro trocar com o serviço no ar.
 - **mensageria e padrão outbox** — a limpeza de post apagado é uma chamada síncrona por melhor esforço. um broker daria reentrega e fecharia a janela de inconsistência.
 - **rastreamento distribuído** (Micrometer Tracing / Zipkin) — hoje, seguir uma requisição pelos dois serviços exige cruzar dois logs na mão.
 - **autenticação entre serviços** — as rotas de integração do microsserviço estão abertas. em produção estariam na rede interna ou atrás de credenciais de serviço.
-- **testes de contrato ou com containers** — a conversa real entre os três processos foi verificada à mão.
+- **testes de contrato ou com containers** — a conversa real entre os processos foi verificada à mão, com o roteiro acima.
 
 nenhum desses é difícil de acrescentar sobre o que existe, e é isso que a estrutura atual deveria garantir: o gateway entra na frente, o broker entra no listener, o tracing entra por dependência. o que essa entrega procurou fazer bem foi a fronteira — porque é ela que, feita errado, torna todo o resto caro.

@@ -1,0 +1,26 @@
+# ---------------------------------------------------------------------------------
+# propriedades compartilhadas por TODOS os clientes de configuracao.
+#
+# o nome do arquivo (application) e o que o spring cloud config trata como coringa:
+# o que esta aqui vale para qualquer servico que peca configuracao, e cada servico
+# pode sobrescrever no arquivo com o nome dele.
+#
+# a regra que usei para decidir o que centralizar: entra aqui o que e ajuste de
+# AMBIENTE -- endereco, limite, intervalo, algo que muda entre a maquina de quem
+# desenvolve e um servidor de producao, sem que uma linha de codigo mude. fica no
+# proprio servico o que e decisao de CODIGO -- o nome da aplicacao, o dialeto do
+# banco, ligar ou nao o circuit breaker nos clientes feign.
+# ---------------------------------------------------------------------------------
+
+# o endereco do registro de servicos e o exemplo canonico de propriedade que deve
+# viver aqui: todos os clientes precisam dele, e ele muda por ambiente. antes desta
+# entrega ele estava repetido no application.yml de cada servico -- duas copias que
+# ninguem garantia que continuariam iguais.
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+  instance:
+    # registrar-se pelo ip, e nao pelo hostname, evita depender de resolucao de nome
+    # na rede onde os servicos rodam
+    prefer-ip-address: true

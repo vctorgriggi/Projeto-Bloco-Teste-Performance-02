@@ -7,6 +7,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
 import org.springframework.boot.test.autoconfigure.orm.jpa.TestEntityManager;
 import org.springframework.context.annotation.Import;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.dao.DataIntegrityViolationException;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -16,7 +17,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 // de unicidade do email e o travamento otimista via @Version. o @DataJpaTest sobe
 // so a fatia de jpa sobre o h2 e reverte a transacao ao fim de cada teste; o
 // @Import traz a config que habilita a fabrica de repositorios do envers.
+//
+// o @ActiveProfiles e obrigatorio: fora do perfil de teste, o application.yml manda
+// buscar as propriedades no config server, e o teste passaria a exigir aquele processo
+// no ar.
 @DataJpaTest
+@ActiveProfiles("test")
 @Import(PersistenceConfig.class)
 class AuthorRepositoryTest {
 

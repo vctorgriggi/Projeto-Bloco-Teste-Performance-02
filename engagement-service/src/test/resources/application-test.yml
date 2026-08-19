@@ -1,12 +1,26 @@
-# perfil de teste do microsservico. o ponto importante e o eureka desligado: os
-# testes nao devem depender de um servidor de descoberta rodando na maquina, e sem
-# isso o contexto tentaria se registrar e demoraria em retentativas.
+# perfil de teste do microsservico. nem o config server nem o eureka sao consultados
+# aqui: os testes nao devem depender de nenhum dos dois rodando na maquina. a busca de
+# configuracao e cortada no proprio application.yml, que a condiciona ao perfil (!test).
 spring:
   jpa:
     show-sql: false
     properties:
       hibernate:
         format_sql: false
+
+  # sao necessarias DUAS coisas para os testes nao dependerem do config server, e elas
+  # resolvem problemas diferentes:
+  #
+  # 1. o application.yml condiciona o spring.config.import ao perfil (!test). isso e o que
+  #    evita a chamada http de verdade -- sem essa parte, o fail-fast e o retry fariam cada
+  #    classe de teste gastar mais de um minuto tentando alcancar o servidor.
+  # 2. esta propriedade aqui. o spring cloud instala um guard que exige um
+  #    spring.config.import declarado sempre que o cliente de configuracao esta no
+  #    classpath, e sem ela o contexto falha com "No spring.config.import set" -- agora
+  #    justamente porque o import foi (corretamente) omitido.
+  cloud:
+    config:
+      enabled: false
 
 eureka:
   client:

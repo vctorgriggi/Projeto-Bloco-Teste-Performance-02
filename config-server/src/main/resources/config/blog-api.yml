@@ -1,0 +1,66 @@
+# ---------------------------------------------------------------------------------
+# propriedades do monolito (spring.application.name = blog-api).
+#
+# sao as politicas de operacao da integracao com o microsservico. estar aqui significa
+# que ajustar um timeout ou o limiar do circuito e editar este arquivo e reiniciar o
+# monolito -- sem recompilar nada, e com o valor visivel em um lugar so.
+# ---------------------------------------------------------------------------------
+
+# origem do front-end liberada para chamadas cross-origin. muda por ambiente (outra
+# porta em desenvolvimento, um dominio de verdade em producao), entao e configuracao.
+app:
+  cors:
+    allowed-origin: http://localhost:5173
+
+eureka:
+  client:
+    # o padrao busca a tabela de instancias a cada 30s. subindo os processos juntos,
+    # isso significa ate meio minuto em que o monolito ainda nao viu o engajamento e
+    # responde 503 -- correto, mas confuso de demonstrar. 10s deixa a subida e a
+    # recuperacao visiveis sem inundar o registro de requisicoes.
+    registry-fetch-interval-seconds: 10
+
+spring:
+  cloud:
+    openfeign:
+      client:
+        config:
+          default:
+            # os timeouts do http precisam ser menores que o do time limiter do
+            # resilience4j (abaixo), senao o circuito estoura antes de o proprio
+            # cliente desistir e a causa da falha fica confusa no log.
+            connect-timeout: 2000
+            read-timeout: 3000
+            logger-level: basic
+
+# resiliencia da chamada ao engajamento.
+#
+# os dois blocos usam a configuracao "default" de proposito: o spring cloud cria um
+# circuito por metodo do cliente feign, com nomes derivados da assinatura, e nomear
+# cada um seria repeticao inutil. a politica e a mesma para todos.
+resilience4j:
+  circuitbreaker:
+    configs:
+      default:
+        sliding-window-size: 8
+        minimum-number-of-calls: 4          # nao abre o circuito no primeiro tropeco
+        failure-rate-threshold: 50          # metade das chamadas falhando e o bastante
+        wait-duration-in-open-state: 10s    # depois disso, tenta de novo
+        permitted-number-of-calls-in-half-open-state: 2
+        # erros de negocio que atravessaram a fronteira (um comentario que nao existe,
+        # uma reacao repetida) NAO sao falha do servico. sem esta lista, um leitor
+        # insistindo em reagir duas vezes abriria o circuito e derrubaria o engajamento
+        # para todo mundo.
+        ignore-exceptions:
+          - com.blog.shared.exception.ResourceNotFoundException
+          - com.blog.shared.exception.BusinessRuleException
+          - com.blog.shared.exception.InvalidRequestException
+
+  timelimiter:
+    configs:
+      default:
+        # o padrao do time limiter e 1 segundo, curto demais para uma chamada http
+        # real: em uma maquina carregada, chamadas legitimas comecariam a ser cortadas
+        # e o circuito abriria sem que nada estivesse errado.
+        timeout-duration: 5s
+        cancel-running-future: true

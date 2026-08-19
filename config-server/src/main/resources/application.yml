@@ -1,0 +1,20 @@
+spring:
+  application:
+    name: config-server
+
+  profiles:
+    # o backend padrao do spring cloud config e um repositorio git -- e o que se usa em
+    # producao, porque da versionamento e auditoria das propriedades de graca. o perfil
+    # native le de um diretorio local, e foi o escolhido aqui para nao exigir um segundo
+    # repositorio so para guardar configuracao. trocar para git e mudar este perfil e
+    # apontar spring.cloud.config.server.git.uri.
+    active: native
+
+  cloud:
+    config:
+      server:
+        native:
+          search-locations: classpath:/config
+
+server:
+  port: 8888

@@ -1,0 +1,60 @@
+spring:
+  # este nome nao e enfeite: e por ele que o servico se registra no eureka e por
+  # ele que o monolito o procura. o @FeignClient do outro lado usa exatamente
+  # "engagement-service", nunca um host ou uma porta.
+  application:
+    name: engagement-service
+
+  # banco proprio do microsservico (um banco por servico). e outro schema, com
+  # outras tabelas, sem nenhuma juncao possivel com posts e autores -- e essa
+  # separacao que torna o servico realmente independente.
+  datasource:
+    url: jdbc:h2:mem:engagementdb;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password: ""
+
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    show-sql: true
+    properties:
+      hibernate:
+        format_sql: true
+      # a auditoria do comentario veio do monolito com a mesma configuracao: o
+      # prefixo completo org.hibernate.envers. e obrigatorio, e store_data_at_delete
+      # preserva o estado do comentario na revisao de exclusao.
+      org.hibernate.envers.store_data_at_delete: true
+
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+
+server:
+  port: 8081
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+    # publica o resultado do health check do actuator no registro, para o eureka
+    # marcar a instancia como fora do ar quando o banco cair, e nao apenas quando
+    # o processo morrer
+    healthcheck:
+      enabled: true
+  instance:
+    prefer-ip-address: true
+    # batidas mais frequentes que o padrao (30s/90s) para a queda do servico
+    # aparecer rapido durante a demonstracao
+    lease-renewal-interval-in-seconds: 10
+    lease-expiration-duration-in-seconds: 20
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always

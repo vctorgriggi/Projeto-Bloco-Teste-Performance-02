@@ -5,12 +5,13 @@ import com.blog.authoring.repository.PostRepository;
 import com.blog.authoring.web.dto.AuthorRequest;
 import com.blog.authoring.web.dto.PostRequest;
 import com.blog.authoring.web.dto.PostRevisionResponse;
-import com.blog.engagement.repository.CommentRepository;
+import com.blog.engagement.client.EngagementClient;
 import com.blog.shared.exception.ResourceNotFoundException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.util.List;
@@ -38,15 +39,17 @@ class PostHistoryServiceTest {
     @Autowired
     private PostRepository postRepository;
 
+    // apagar um post agora avisa o servico de engajamento para limpar a conversa e as
+    // reacoes daquele post. este teste e sobre historico, nao sobre integracao, entao
+    // o cliente entra dublado: sem isso o teste tentaria uma chamada http de verdade.
+    @MockBean
+    private EngagementClient engagementClient;
+
     @Autowired
     private AuthorRepository authorRepository;
 
-    @Autowired
-    private CommentRepository commentRepository;
-
     @AfterEach
     void limparBanco() {
-        commentRepository.deleteAll();
         postRepository.deleteAll();
         authorRepository.deleteAll();
     }

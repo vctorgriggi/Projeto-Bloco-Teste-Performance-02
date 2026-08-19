@@ -4,7 +4,6 @@ import com.blog.authoring.repository.AuthorRepository;
 import com.blog.authoring.repository.PostRepository;
 import com.blog.authoring.web.dto.AuthorRequest;
 import com.blog.authoring.web.dto.AuthorRevisionResponse;
-import com.blog.engagement.repository.CommentRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,12 +31,8 @@ class AuthorHistoryServiceTest {
     @Autowired
     private PostRepository postRepository;
 
-    @Autowired
-    private CommentRepository commentRepository;
-
     @AfterEach
     void limparBanco() {
-        commentRepository.deleteAll();
         postRepository.deleteAll();
         authorRepository.deleteAll();
     }

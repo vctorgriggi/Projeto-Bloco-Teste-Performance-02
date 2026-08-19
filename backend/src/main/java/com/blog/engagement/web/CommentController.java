@@ -17,8 +17,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.List;
 
-// comentarios sao tratados como sub-recurso de um post na criacao e listagem,
-// e como recurso proprio na remocao por id.
+// as rotas de comentario nao mudaram: mesmos caminhos, mesmos verbos, mesmos status.
+// o que mudou esta uma camada abaixo, no service, que agora conversa com outro
+// processo. e esse o teste pratico de que a fronteira estava no lugar certo antes de
+// virar fronteira de rede.
 @RestController
 @RequestMapping("/api")
 public class CommentController {

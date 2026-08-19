@@ -1,5 +1,11 @@
 // cliente http unico para falar com a api do back-end. centraliza a base url e
 // o tratamento de erro para os componentes nao repetirem fetch na mao.
+//
+// a base url continua sendo uma so, mesmo agora que o sistema tem dois servicos:
+// comentarios e reacoes vivem no microsservico de engajamento, mas o navegador nao
+// fala com ele direto -- o monolito e a porta de entrada e alcanca o engajamento por
+// dentro. do lado do front, portanto, nada de descoberta de servico, segunda origem
+// ou segundo cors.
 
 const BASE_URL = 'http://localhost:8080/api'
 
@@ -33,10 +39,26 @@ export const api = {
   publishPost: (id) => request(`/posts/${id}/publish`, { method: 'POST' }),
   deletePost: (id) => request(`/posts/${id}`, { method: 'DELETE' }),
 
+  // comentarios e reacoes sao servidos pelo microsservico de engajamento, atraves do
+  // monolito. quando ele esta fora do ar, estas chamadas respondem 503 e a mensagem
+  // de erro chega aqui como qualquer outra.
   listComments: (postId) => request(`/posts/${postId}/comments`),
   addComment: (postId, data) =>
     request(`/posts/${postId}/comments`, { method: 'POST', body: JSON.stringify(data) }),
   deleteComment: (id) => request(`/comments/${id}`, { method: 'DELETE' }),
+
+  reactionSummary: (postId, reader) =>
+    request(`/posts/${postId}/reactions${reader ? `?reader=${encodeURIComponent(reader)}` : ''}`),
+  react: (postId, data) =>
+    request(`/posts/${postId}/reactions`, { method: 'POST', body: JSON.stringify(data) }),
+  undoReaction: (postId, type, reader) =>
+    request(`/posts/${postId}/reactions/${type}?reader=${encodeURIComponent(reader)}`, {
+      method: 'DELETE',
+    }),
+
+  // diagnostico da integracao: responde sempre 200, com available dizendo se o
+  // engajamento esta de pe agora
+  engagementStatus: () => request('/engagement/status'),
 
   listAuthors: () => request('/authors'),
   createAuthor: (data) => request('/authors', { method: 'POST', body: JSON.stringify(data) }),

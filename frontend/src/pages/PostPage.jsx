@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { api } from '../api.js'
 import { Squiggle } from '../components/Doodles.jsx'
+import ReactionBar from '../components/ReactionBar.jsx'
 
 // rotulos amigaveis para os metadados que o back-end devolve do envers
 const REVISION_LABELS = { INSERT: 'criado', UPDATE: 'editado', DELETE: 'removido' }
@@ -47,6 +48,9 @@ export default function PostPage() {
   const [post, setPost] = useState(null)
   const [comments, setComments] = useState([])
   const [error, setError] = useState(null)
+  // erro dos comentarios separado do erro da pagina: eles vem de outro servico, e a
+  // queda dele nao pode esconder o texto do post
+  const [commentsError, setCommentsError] = useState(null)
   const [form, setForm] = useState({ authorName: '', content: '' })
 
   // modo edicao do proprio post (titulo e texto)
@@ -57,14 +61,32 @@ export default function PostPage() {
   const [history, setHistory] = useState(null)
   const [showHistory, setShowHistory] = useState(false)
 
-  function load() {
-    Promise.all([api.getPost(id), api.listComments(id)])
-      .then(([p, c]) => {
-        setPost(p)
+  // as duas chamadas saem separadas de proposito. antes era um Promise.all: qualquer
+  // falha derrubava a pagina inteira. agora que os comentarios moram em outro processo,
+  // uma queda deles deixaria o leitor sem conseguir ler o post -- que continua aqui,
+  // intacto, neste servico.
+  function loadComments() {
+    api
+      .listComments(id)
+      .then((c) => {
         setComments(c)
+        setCommentsError(null)
+      })
+      .catch((e) => {
+        setComments([])
+        setCommentsError(e.message)
+      })
+  }
+
+  function load() {
+    api
+      .getPost(id)
+      .then((p) => {
+        setPost(p)
         setError(null)
       })
       .catch((e) => setError(e.message))
+    loadComments()
   }
 
   useEffect(load, [id])
@@ -125,7 +147,7 @@ export default function PostPage() {
     try {
       await api.addComment(id, form)
       setForm({ authorName: '', content: '' })
-      load()
+      loadComments()
     } catch (e) {
       setError(e.message)
     }
@@ -135,7 +157,7 @@ export default function PostPage() {
     if (!confirm('apagar este comentario?')) return
     try {
       await api.deleteComment(commentId)
-      load()
+      loadComments()
     } catch (e) {
       setError(e.message)
     }
@@ -212,11 +234,21 @@ export default function PostPage() {
           </div>
 
           {showHistory && <PostHistory revisions={history} />}
+
+          {/* reacoes: capacidade servida pelo microsservico de engajamento */}
+          <ReactionBar postId={id} />
         </>
       )}
 
       <section className="comments">
         <h3>conversa ({comments.length})</h3>
+
+        {commentsError && (
+          <p className="error-note">
+            {commentsError} — o post continua aqui; a conversa volta quando o serviço de
+            engajamento responder.
+          </p>
+        )}
 
         <ul className="comment-list">
           {comments.map((c) => (
@@ -230,24 +262,30 @@ export default function PostPage() {
               <p>{c.content}</p>
             </li>
           ))}
-          {comments.length === 0 && <p className="muted">seja o primeiro a comentar.</p>}
+          {comments.length === 0 && !commentsError && (
+            <p className="muted">seja o primeiro a comentar.</p>
+          )}
         </ul>
 
-        <form onSubmit={handleAddComment} className="comment-form">
-          <input
-            placeholder="seu nome"
-            value={form.authorName}
-            onChange={(e) => setForm({ ...form, authorName: e.target.value })}
-            required
-          />
-          <textarea
-            placeholder="deixe um recado..."
-            value={form.content}
-            onChange={(e) => setForm({ ...form, content: e.target.value })}
-            required
-          />
-          <button type="submit" className="btn">comentar</button>
-        </form>
+        {/* sem servico de engajamento nao ha onde gravar o recado, entao o formulario
+            sai da tela em vez de aceitar um texto que vai se perder */}
+        {!commentsError && (
+          <form onSubmit={handleAddComment} className="comment-form">
+            <input
+              placeholder="seu nome"
+              value={form.authorName}
+              onChange={(e) => setForm({ ...form, authorName: e.target.value })}
+              required
+            />
+            <textarea
+              placeholder="deixe um recado..."
+              value={form.content}
+              onChange={(e) => setForm({ ...form, content: e.target.value })}
+              required
+            />
+            <button type="submit" className="btn">comentar</button>
+          </form>
+        )}
       </section>
     </article>
   )

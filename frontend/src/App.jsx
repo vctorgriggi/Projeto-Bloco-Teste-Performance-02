@@ -4,6 +4,7 @@ import PostPage from './pages/PostPage.jsx'
 import NewPostPage from './pages/NewPostPage.jsx'
 import AuthorsPage from './pages/AuthorsPage.jsx'
 import { CoffeeDoodle, Squiggle } from './components/Doodles.jsx'
+import ServiceBadge from './components/ServiceBadge.jsx'
 
 // layout geral: um cabecalho enxuto com a "marca" da cafeteria, a navegacao e
 // o rodape. o conteudo de cada rota entra no <main>.
@@ -23,6 +24,8 @@ export default function App() {
           <NavLink to="/" end>posts</NavLink>
           <NavLink to="/escrever">escrever</NavLink>
           <NavLink to="/autores">autores</NavLink>
+          {/* o sistema agora tem uma peca que pode cair sozinha; o selo avisa */}
+          <ServiceBadge />
         </nav>
         <Squiggle className="header-squiggle" />
       </header>
@@ -38,7 +41,7 @@ export default function App() {
 
       <footer className="site-footer">
         <Squiggle className="footer-squiggle" />
-        <p>feito devagar, com cafe ~ projeto bloco, primeira entrega</p>
+        <p>feito devagar, com cafe ~ projeto bloco, terceira entrega</p>
       </footer>
     </div>
   )

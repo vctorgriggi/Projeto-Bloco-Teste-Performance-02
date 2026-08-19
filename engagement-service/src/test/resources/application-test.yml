@@ -1,0 +1,15 @@
+# perfil de teste do microsservico. o ponto importante e o eureka desligado: os
+# testes nao devem depender de um servidor de descoberta rodando na maquina, e sem
+# isso o contexto tentaria se registrar e demoraria em retentativas.
+spring:
+  jpa:
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+
+eureka:
+  client:
+    enabled: false
+    register-with-eureka: false
+    fetch-registry: false

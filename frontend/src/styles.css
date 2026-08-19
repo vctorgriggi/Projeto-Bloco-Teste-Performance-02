@@ -488,3 +488,157 @@ textarea {
   font-family: 'Klee One', cursive;
   font-size: 0.9rem;
 }
+
+/* reacoes: a barra vem do microsservico de engajamento. cada botao e uma pilula de
+   papel que ganha o acento quando o leitor marcou aquele tipo. */
+.reactions {
+  border-top: 2px dashed var(--line);
+  padding-top: 22px;
+  margin-top: 24px;
+}
+
+.reactions-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.reactions-head h3 {
+  font-family: 'Shippori Mincho', serif;
+  margin: 0;
+}
+
+.reactions-total {
+  font-family: 'Klee One', cursive;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+}
+
+.reaction-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 14px 0 4px;
+}
+
+.reaction-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--card);
+  border: 1px dashed var(--line);
+  border-radius: 999px;
+  padding: 7px 16px 7px 12px;
+  font-family: inherit;
+  font-size: 0.9rem;
+  color: var(--ink-soft);
+  cursor: pointer;
+  transition: border-color 0.2s, color 0.2s, background 0.2s, transform 0.1s;
+}
+
+.reaction-btn:hover:not(:disabled) {
+  border-color: var(--accent);
+  color: var(--ink);
+}
+
+.reaction-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.reaction-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* marcada pelo leitor: o mesmo clique desfaz */
+.reaction-btn-on {
+  background: #eaf1f2;
+  border-style: solid;
+  border-color: var(--accent);
+  color: var(--accent-deep);
+}
+
+.reaction-icon {
+  width: 20px;
+  height: 20px;
+  flex-shrink: 0;
+}
+
+.reaction-label {
+  font-family: 'Klee One', cursive;
+}
+
+.reaction-count {
+  min-width: 22px;
+  text-align: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--accent-deep);
+  background: var(--paper);
+  border-radius: 999px;
+  padding: 1px 7px;
+}
+
+.reaction-btn-on .reaction-count {
+  background: #fff;
+}
+
+/* o leitor se identifica por um nome, guardado no navegador: e o que o servico usa
+   para saber que ele ja reagiu */
+.reader-field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 0.85rem;
+  color: var(--ink-soft);
+  margin-top: 10px;
+}
+
+.reader-field input {
+  padding: 6px 12px;
+  font-size: 0.9rem;
+  max-width: 200px;
+}
+
+/* selo de disponibilidade do microsservico. num sistema distribuido uma peca pode
+   cair sozinha, e o leitor merece saber antes de tentar comentar. */
+.service-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: auto;
+  font-size: 0.75rem;
+  font-family: 'Klee One', cursive;
+  padding: 3px 12px;
+  border-radius: 999px;
+  background: #e3efe6;
+  color: #3f6b4d;
+  cursor: default;
+  white-space: nowrap;
+}
+
+.service-badge-down {
+  background: #fbeae3;
+  color: #8a4a2c;
+}
+
+.service-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: currentColor;
+  flex-shrink: 0;
+}
+
+/* em telas estreitas o selo desce para a propria linha, abaixo da navegacao */
+@media (max-width: 560px) {
+  .site-nav {
+    flex-wrap: wrap;
+  }
+
+  .service-badge {
+    margin-left: 0;
+    flex-basis: 100%;
+  }
+}

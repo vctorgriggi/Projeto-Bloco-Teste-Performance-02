@@ -17,9 +17,14 @@ import java.time.Instant;
 
 import static lombok.AccessLevel.PROTECTED;
 
-// comentario de um leitor em um post. pertence ao contexto de engajamento e
-// referencia o post apenas por id, sem depender da entidade Post de authoring.
-// o indice em post_id atende a listagem de comentarios de um post.
+// comentario de um leitor em um post. a entidade veio do monolito na terceira
+// entrega e chegou aqui inteira: mesmo mapeamento jpa, mesmo indice em post_id,
+// mesmo travamento otimista e a mesma auditoria do envers (comments_AUD).
+//
+// o postId continua sendo apenas um numero. antes ele era uma referencia solta
+// dentro do mesmo banco; agora e um identificador que atravessa a fronteira de
+// rede, e nao existe (nem poderia existir) chave estrangeira para a tabela de
+// posts, que vive em outro servico e em outro banco.
 @Entity
 @Table(name = "comments", indexes = {
         @Index(name = "idx_comments_post_id", columnList = "post_id")

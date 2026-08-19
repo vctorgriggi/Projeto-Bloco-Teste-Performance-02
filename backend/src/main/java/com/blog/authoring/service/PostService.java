@@ -6,7 +6,9 @@ import com.blog.authoring.repository.AuthorRepository;
 import com.blog.authoring.repository.PostRepository;
 import com.blog.authoring.web.dto.PostRequest;
 import com.blog.authoring.web.dto.PostResponse;
+import com.blog.shared.event.PostDeletedEvent;
 import com.blog.shared.exception.ResourceNotFoundException;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,10 +22,13 @@ public class PostService {
 
     private final PostRepository postRepository;
     private final AuthorRepository authorRepository;
+    private final ApplicationEventPublisher eventPublisher;
 
-    public PostService(PostRepository postRepository, AuthorRepository authorRepository) {
+    public PostService(PostRepository postRepository, AuthorRepository authorRepository,
+                       ApplicationEventPublisher eventPublisher) {
         this.postRepository = postRepository;
         this.authorRepository = authorRepository;
+        this.eventPublisher = eventPublisher;
     }
 
     public PostResponse create(PostRequest request) {
@@ -59,6 +64,13 @@ public class PostService {
     public void delete(Long id) {
         Post post = getPost(id);
         postRepository.delete(post);
+
+        // o post sai daqui, mas os comentarios e as reacoes dele vivem em outro
+        // servico e em outro banco. em vez de chamar o engajamento direto (o que
+        // faria authoring depender do outro contexto), anuncia-se o que aconteceu;
+        // quem se interessa reage. a entrega e feita depois do commit desta
+        // transacao, para nunca limpar o engajamento de um post que voltou atras.
+        eventPublisher.publishEvent(new PostDeletedEvent(id));
     }
 
     private Post getPost(Long id) {

@@ -1,7 +1,9 @@
 package com.blog.shared.web;
 
 import com.blog.shared.exception.BusinessRuleException;
+import com.blog.shared.exception.InvalidRequestException;
 import com.blog.shared.exception.ResourceNotFoundException;
+import com.blog.shared.exception.ServiceUnavailableException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.dao.OptimisticLockingFailureException;
@@ -49,6 +51,30 @@ public class GlobalExceptionHandler {
         ApiError body = ApiError.of(HttpStatus.CONFLICT.value(), "Conflict",
                 "A operacao viola uma restricao de integridade dos dados.", req.getRequestURI());
         return ResponseEntity.status(HttpStatus.CONFLICT).body(body);
+    }
+
+    // o microsservico de engajamento nao respondeu: processo fora do ar, timeout ou
+    // circuito aberto. 503 e o status honesto -- nao foi a requisicao que estava
+    // errada, e o sistema que esta com uma peca faltando, e tentar de novo mais
+    // tarde tende a funcionar. sem este mapeamento, uma queda do engajamento
+    // apareceria como 500 e o front nao teria como distinguir de um bug.
+    @ExceptionHandler(ServiceUnavailableException.class)
+    public ResponseEntity<ApiError> handleServicoIndisponivel(ServiceUnavailableException ex,
+                                                              HttpServletRequest req) {
+        ApiError body = ApiError.of(HttpStatus.SERVICE_UNAVAILABLE.value(), "Service Unavailable",
+                ex.getMessage(), req.getRequestURI());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).body(body);
+    }
+
+    // um servico chamado recusou a requisicao por validacao. o monolito nao repete
+    // as validacoes do outro servico, entao repassa a recusa com o mesmo significado
+    // (400) em vez de transformar erro do cliente em erro do servidor.
+    @ExceptionHandler(InvalidRequestException.class)
+    public ResponseEntity<ApiError> handleRequisicaoInvalida(InvalidRequestException ex,
+                                                             HttpServletRequest req) {
+        ApiError body = ApiError.of(HttpStatus.BAD_REQUEST.value(), "Bad Request",
+                ex.getMessage(), req.getRequestURI());
+        return ResponseEntity.badRequest().body(body);
     }
 
     // dispara quando um dto anotado com @Valid nao passa nas validacoes

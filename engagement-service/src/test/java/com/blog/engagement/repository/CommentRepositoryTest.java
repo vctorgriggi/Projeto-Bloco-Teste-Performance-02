@@ -1,20 +1,21 @@
 package com.blog.engagement.repository;
 
 import com.blog.engagement.domain.Comment;
-import com.blog.shared.config.PersistenceConfig;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.orm.jpa.DataJpaTest;
-import org.springframework.context.annotation.Import;
+import org.springframework.test.context.ActiveProfiles;
 
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-// testes da persistencia do comentario: a consulta derivada deve trazer apenas os
-// comentarios do post pedido e em ordem cronologica.
+// o teste de persistencia do comentario acompanhou a entidade na mudanca de
+// processo. ele nao precisa mais importar a configuracao de repositorios do envers
+// (o microsservico nao expoe consulta de revisao), mas continua verificando o que
+// importa: a consulta derivada filtra pelo post pedido e ordena por data.
 @DataJpaTest
-@Import(PersistenceConfig.class)
+@ActiveProfiles("test")
 class CommentRepositoryTest {
 
     @Autowired
@@ -33,5 +34,15 @@ class CommentRepositoryTest {
         assertThat(doPrimeiroPost)
                 .extracting(Comment::getAuthorName)
                 .containsExactly("Carla", "Diego");
+    }
+
+    @Test
+    void countByPostId_contaSoOsComentariosDaquelePost() {
+        commentRepository.saveAndFlush(new Comment(1L, "Carla", "um"));
+        commentRepository.saveAndFlush(new Comment(1L, "Diego", "dois"));
+        commentRepository.saveAndFlush(new Comment(2L, "Ana", "de outro post"));
+
+        assertThat(commentRepository.countByPostId(1L)).isEqualTo(2);
+        assertThat(commentRepository.countByPostId(99L)).isZero();
     }
 }

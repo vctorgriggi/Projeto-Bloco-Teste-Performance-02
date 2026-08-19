@@ -4,22 +4,24 @@ import com.blog.authoring.domain.Author;
 import com.blog.authoring.domain.Post;
 import com.blog.authoring.repository.AuthorRepository;
 import com.blog.authoring.repository.PostRepository;
-import com.blog.engagement.domain.Comment;
-import com.blog.engagement.repository.CommentRepository;
 import org.springframework.boot.CommandLineRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
 
-// popula o banco em memoria com alguns dados de exemplo no startup, para a api
-// e o front terem conteudo logo na primeira execucao. so roda se estiver vazio.
-// fica desligado no perfil de teste para os testes partirem de um banco limpo.
+// popula o banco em memoria com alguns dados de exemplo no startup, para a api e o
+// front terem conteudo logo na primeira execucao. so roda se estiver vazio. fica
+// desligado no perfil de teste para os testes partirem de um banco limpo.
+//
+// os comentarios sairam daqui na terceira entrega: eles nao pertencem mais a este
+// banco. o exemplo de conversa e de reacoes e semeado pelo seeder do proprio
+// engagement-service, que amarra tudo pelos mesmos ids de post gerados aqui (1, 2 e 3).
 @Configuration
 @Profile("!test")
 public class DataSeeder {
 
     @Bean
-    CommandLineRunner seed(AuthorRepository authors, PostRepository posts, CommentRepository comments) {
+    CommandLineRunner seed(AuthorRepository authors, PostRepository posts) {
         return args -> {
             if (authors.count() > 0) {
                 return;
@@ -33,17 +35,13 @@ public class DataSeeder {
             Post primeiro = new Post("Comecando com Spring Boot",
                     "Spring Boot reduz a configuracao inicial e deixa voce focar no dominio.", ana.getId());
             primeiro.publish();
-            primeiro = posts.save(primeiro);
+            posts.save(primeiro);
 
-            Post segundo = posts.save(new Post("Organizando o codigo em camadas",
+            posts.save(new Post("Organizando o codigo em camadas",
                     "Controller, service e repository: cada um com uma responsabilidade clara.", ana.getId()));
 
             posts.save(new Post("React e Vite na pratica",
                     "Um setup rapido de front-end para consumir a sua api.", bruno.getId()));
-
-            comments.save(new Comment(primeiro.getId(), "Carla", "Otimo resumo, ajudou bastante!"));
-            comments.save(new Comment(primeiro.getId(), "Diego", "Esperando a proxima parte."));
-            comments.save(new Comment(segundo.getId(), "Ana", "Separar camadas faz toda a diferenca."));
         };
     }
 }

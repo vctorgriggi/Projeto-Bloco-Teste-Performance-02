@@ -1,0 +1,31 @@
+spring:
+  application:
+    name: discovery-server
+
+server:
+  port: 8761
+
+eureka:
+  instance:
+    hostname: localhost
+
+  client:
+    # este processo e o registro, nao um cliente: nao se registra em si mesmo
+    # nem baixa a propria tabela de instancias.
+    register-with-eureka: false
+    fetch-registry: false
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+
+  server:
+    # em producao a auto-preservacao evita que uma falha de rede derrube o
+    # registro inteiro; em desenvolvimento ela atrasa a remocao de um servico
+    # que foi encerrado, entao fica desligada e a expiracao roda a cada 5s.
+    # assim, ao parar o microsservico, o painel reflete a queda rapido.
+    enable-self-preservation: false
+    eviction-interval-timer-in-ms: 5000
+
+logging:
+  level:
+    com.netflix.eureka: WARN
+    com.netflix.discovery: WARN

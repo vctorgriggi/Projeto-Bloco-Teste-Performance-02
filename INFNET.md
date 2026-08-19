@@ -1,91 +1,148 @@
-# Segunda Entrega: Desenvolver uma Camada de Persistência Real
+# Terceira Entrega: Criação de um Microsserviço
+
+No curso de Engenharia de Softwares Escaláveis, esta terceira etapa envolve expandir a aplicação monolítica anterior, introduzindo um microsserviço usando Spring Boot e Spring Cloud. Este novo componente deve se integrar de forma eficaz ao sistema maior, exemplificando práticas de desenvolvimento distribuído.
 
 ## Objetivo da Etapa
 
-Implementar uma camada de persistência que não apenas suporte as operações básicas de CRUD, mas também introduza funcionalidades avançadas como o histórico de dados, utilizando as capacidades do JPA e dos Repositórios Spring Data.
+Desenvolver e integrar um microsserviço, demonstrando competência em separação de responsabilidades, comunicação entre serviços e modularização.
 
 ## Subcompetências a serem Desenvolvidas
 
-### Modelagem de Dados
+### 1. Atualização do Modelo de Domínio
 
-Modelar dados considerando os requisitos de consulta e isolamento de domínio adequado, assegurando que a estrutura de dados esteja alinhada com as necessidades empresariais e técnicas.
+Incorporar um novo serviço no modelo de domínio, refletindo mudanças na arquitetura e nas dependências.
 
-### Integração de JPA com Spring Data
+### 2. Criação de Endpoints da API REST
 
-- Utilizar anotações JPA para o mapeamento objeto-relacional, facilitando a interação entre objetos Java e a base de dados.
-- Criar e utilizar Repositórios Spring Data para abstrair e otimizar o acesso a dados.
+Implementar novos endpoints para acesso ao microsserviço via REST API.
 
-### Gerenciamento de Dados
+### 3. Implementação de Microsserviço
 
-Gerenciar o acesso e a manipulação de dados no banco de dados, assegurando a integridade e a performance da aplicação.
+- Usar Spring Boot para o desenvolvimento do microsserviço.
+- Aplicar Spring Cloud para facilitar a configuração e comunicação distribuídas.
 
-### Integração de Funcionalidades de Histórico de Dados
+### 4. Desenvolvimento de Repositórios
 
-Integrar uma funcionalidade que permita registrar e consultar o histórico de mudanças dos dados dentro da aplicação, crucial para auditorias e rastreabilidade.
+Criar repositórios dedicados para gerenciar dados específicos do microsserviço.
 
-### Implementação de Testes
+### 5. Desenvolvimento de Componentes Front-End
 
-Desenvolver testes automatizados para a camada de persistência utilizando frameworks e ferramentas adequadas para aplicações Spring Boot, garantindo a robustez e a confiabilidade do software.
+Adicionar componentes na interface do usuário para interação com o novo microsserviço.
+
+### 6. Atualização e Criação de Testes
+
+Expandir a cobertura de testes para incluir o novo microsserviço e atualizações no sistema.
 
 ## Entregas Esperadas
 
-- **Código Fonte:** Atualização do repositório Git com a implementação da camada de persistência, incluindo funcionalidades de histórico.
-- **Documentação:** Expansão da documentação existente para incluir detalhes sobre o design da camada de persistência, modelos de dados, e exemplos de uso dos repositórios.
-- **Testes:** Conjunto de testes automatizados que demonstram a funcionalidade e robustez da camada de persistência.
+- **Código Fonte:** Repositório com o microsserviço e atualizações correspondentes no sistema e interface de usuário.
+- **Documentação:** Arquitetura detalhada do microsserviço, integração com o sistema, e descrição dos novos endpoints da API.
+- **Demonstração de Funcionalidade:** Apresentação prática mostrando a operação integrada do novo microsserviço.
 
 ## Avaliação
 
-Os alunos serão avaliados pela eficácia na implementação da camada de persistência, a adequação do uso das tecnologias JPA e Spring Data, a qualidade dos testes desenvolvidos, e a completude da documentação fornecida.
+A avaliação considerará a funcionalidade do microsserviço, qualidade de implementação, adequação dos testes, e a clareza da documentação arquitetural.
+
+Este projeto aumenta a complexidade do sistema e enriquece a experiência prática dos alunos com arquiteturas modernas de software, preparando-os para enfrentar desafios em ambientes de software distribuídos e dinâmicos.
+
+---
+
+## Onde cada item foi atendido nesta solução
+
+| Subcompetência | Onde está |
+| --- | --- |
+| Atualização do modelo de domínio | novo aggregate `Reaction` e o `Comment` migrado, em [engagement-service/src/main/java/com/blog/engagement/domain/](engagement-service/src/main/java/com/blog/engagement/domain/); modelo e dependências redesenhados em [docs/MICROSSERVICO.md](docs/MICROSSERVICO.md) e [docs/ARQUITETURA.md](docs/ARQUITETURA.md) |
+| Endpoints da API REST | rotas de reação e de status no monólito ([ReactionController](backend/src/main/java/com/blog/engagement/web/ReactionController.java), [EngagementStatusController](backend/src/main/java/com/blog/engagement/web/EngagementStatusController.java)) e a API própria do microsserviço ([engagement-service/.../web/](engagement-service/src/main/java/com/blog/engagement/web/)); tabelas em [README.md](README.md) e [docs/MICROSSERVICO.md](docs/MICROSSERVICO.md) |
+| Microsserviço com Spring Boot | projeto [engagement-service/](engagement-service/), processo próprio na porta 8081 com banco próprio |
+| Spring Cloud | Eureka em [discovery-server/](discovery-server/), OpenFeign + LoadBalancer + Resilience4j no [EngagementClient](backend/src/main/java/com/blog/engagement/client/EngagementClient.java) e na configuração em [backend/src/main/resources/application.yml](backend/src/main/resources/application.yml) |
+| Repositórios dedicados | [CommentRepository](engagement-service/src/main/java/com/blog/engagement/repository/CommentRepository.java) e [ReactionRepository](engagement-service/src/main/java/com/blog/engagement/repository/ReactionRepository.java), com consulta de agregação e projeção por interface |
+| Componentes front-end | [ReactionBar.jsx](frontend/src/components/ReactionBar.jsx), [ServiceBadge.jsx](frontend/src/components/ServiceBadge.jsx) e a degradação graciosa em [PostPage.jsx](frontend/src/pages/PostPage.jsx) |
+| Testes | 89 testes nos três serviços; estratégia descrita em [docs/MICROSSERVICO.md](docs/MICROSSERVICO.md) |
+| Demonstração | roteiro passo a passo na seção "demonstração" de [docs/MICROSSERVICO.md](docs/MICROSSERVICO.md) |
 
 ---
 
 ## Template de Rubrica para ser utilizado com a extensão Rubricator
 
-### 2. Desenvolver uma camada de persistência real para uma aplicação usando anotações JPA e repositórios Spring Data
+### 3. Criar um microsserviço usando Spring Boot e Spring Cloud, integrando-o a uma aplicação existente
 
-**O aluno modelou os dados considerando os requisitos de consulta e isolamento de domínio?**
-
-- Não demonstrou o item de rubrica
-- Demonstrou o item de rubrica
-
-**O aluno utilizou anotações JPA para o mapeamento objeto-relacional?**
+**O aluno atualizou o modelo de domínio para incorporar o novo serviço, refletindo as mudanças na arquitetura e nas dependências?**
 
 - Não demonstrou o item de rubrica
 - Demonstrou o item de rubrica
 
-**O aluno criou e utilizou Repositórios Spring Data para otimizar o acesso a dados?**
+**O aluno implementou novos endpoints da API REST para acesso ao microsserviço?**
 
 - Não demonstrou o item de rubrica
 - Demonstrou o item de rubrica
 
-**O aluno gerenciou o acesso e a manipulação de dados no banco de dados assegurando a integridade e a performance da aplicação?**
+**O aluno usou Spring Boot para o desenvolvimento do microsserviço?**
 
 - Não demonstrou o item de rubrica
 - Demonstrou o item de rubrica
 
-**O aluno integrou funcionalidades que permitem registrar e consultar o histórico de mudanças dos dados?**
+**O aluno aplicou Spring Cloud para facilitar a configuração e a comunicação distribuídas?**
 
 - Não demonstrou o item de rubrica
 - Demonstrou o item de rubrica
 
-**O aluno desenvolveu testes automatizados para a camada de persistência?**
+**O aluno criou repositórios dedicados para gerenciar os dados específicos do microsserviço?**
 
 - Não demonstrou o item de rubrica
 - Demonstrou o item de rubrica
 
-**O aluno atualizou o repositório Git com a implementação da camada de persistência?**
+**O aluno adicionou componentes na interface do usuário para interação com o novo microsserviço?**
 
 - Não demonstrou o item de rubrica
 - Demonstrou o item de rubrica
 
-**O aluno expandiu a documentação existente para incluir detalhes sobre o design da camada de persistência e modelos de dados?**
+**O aluno expandiu a cobertura de testes para incluir o novo microsserviço e as atualizações no sistema?**
 
 - Não demonstrou o item de rubrica
 - Demonstrou o item de rubrica
 
-**O aluno incluiu exemplos de uso dos repositórios na documentação?**
+**O aluno demonstrou separação de responsabilidades entre o monólito e o microsserviço?**
 
 - Não demonstrou o item de rubrica
 - Demonstrou o item de rubrica
 
-**O aluno apresentou um conjunto de testes automatizados que demonstram a funcionalidade e robustez da camada de persistência?**
+**O aluno implementou a comunicação entre os serviços de forma eficaz?**
+
+- Não demonstrou o item de rubrica
+- Demonstrou o item de rubrica
+
+**O aluno atualizou o repositório Git com o microsserviço e as alterações correspondentes no sistema e na interface?**
+
+- Não demonstrou o item de rubrica
+- Demonstrou o item de rubrica
+
+**O aluno documentou a arquitetura do microsserviço e a sua integração com o sistema?**
+
+- Não demonstrou o item de rubrica
+- Demonstrou o item de rubrica
+
+**O aluno descreveu os novos endpoints da API na documentação?**
+
+- Não demonstrou o item de rubrica
+- Demonstrou o item de rubrica
+
+**O aluno apresentou uma demonstração prática da operação integrada do novo microsserviço?**
+
+- Não demonstrou o item de rubrica
+- Demonstrou o item de rubrica
+
+---
+
+## Entregas anteriores
+
+### Segunda Entrega: Desenvolver uma Camada de Persistência Real
+
+Implementar uma camada de persistência que não apenas suporte as operações básicas de CRUD, mas também introduza funcionalidades avançadas como o histórico de dados, utilizando as capacidades do JPA e dos Repositórios Spring Data. As subcompetências cobriam modelagem de dados, integração de JPA com Spring Data, gerenciamento de dados, integração de funcionalidades de histórico e implementação de testes.
+
+O resultado está documentado em [docs/PERSISTENCIA.md](docs/PERSISTENCIA.md).
+
+### Primeira Entrega: Base em Camadas e Bounded Contexts
+
+Montar a estrutura do monólito separada por camadas (controller, service, repository) e por bounded contexts, preparando o terreno para a evolução para microsserviços.
+
+O resultado está documentado em [docs/ARQUITETURA.md](docs/ARQUITETURA.md).

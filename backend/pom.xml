@@ -15,10 +15,11 @@
     <artifactId>blog-api</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>blog-api</name>
-    <description>Monolito de blog em Spring Boot - camada de persistencia com historico</description>
+    <description>Monolito de blog em Spring Boot - integrado ao microsservico de engajamento</description>
 
     <properties>
         <java.version>21</java.version>
+        <spring-cloud.version>2023.0.3</spring-cloud.version>
     </properties>
 
     <dependencies>
@@ -47,7 +48,32 @@
             <artifactId>spring-boot-starter-validation</artifactId>
         </dependency>
 
-        <!-- banco em memoria para a primeira entrega -->
+        <!-- spring cloud, terceira entrega -->
+
+        <!-- cliente de descoberta: o monolito se registra no eureka e, mais
+             importante, consulta o registro para achar o engagement-service pelo
+             nome, sem host nem porta escritos no codigo -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-netflix-eureka-client</artifactId>
+        </dependency>
+
+        <!-- cliente http declarativo: a chamada ao microsservico e escrita como
+             uma interface java, e o balanceamento entre instancias vem do spring
+             cloud loadbalancer que o starter do eureka traz -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-openfeign</artifactId>
+        </dependency>
+
+        <!-- circuit breaker: quando o engajamento cai, as chamadas falham rapido
+             pelo fallback em vez de segurar threads esperando timeout -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-circuitbreaker-resilience4j</artifactId>
+        </dependency>
+
+        <!-- banco em memoria: posts e autores continuam neste servico -->
         <dependency>
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>
@@ -67,6 +93,20 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <dependencyManagement>
+        <dependencies>
+            <!-- trem 2023.0.x (Leyton), a linha do spring cloud compativel com o
+                 spring boot 3.3.x. o mesmo BOM e importado nos tres servicos. -->
+            <dependency>
+                <groupId>org.springframework.cloud</groupId>
+                <artifactId>spring-cloud-dependencies</artifactId>
+                <version>${spring-cloud.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
 
     <build>
         <plugins>

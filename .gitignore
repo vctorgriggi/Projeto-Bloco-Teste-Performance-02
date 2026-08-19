@@ -1,0 +1,18 @@
+# saida de build do maven (um por servico, agora que sao tres)
+target/
+
+# dependencias e build do front-end
+node_modules/
+dist/
+
+# distribuicao baixada pelo maven wrapper
+.mvn/wrapper/maven-wrapper.jar
+
+# arquivos de IDE e de sistema
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# logs
+*.log

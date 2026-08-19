@@ -1,7 +1,0 @@
-com/blog/authoring/service/PostHistoryServiceTest.class
-com/blog/engagement/repository/CommentRepositoryTest.class
-com/blog/authoring/repository/AuthorRepositoryTest.class
-com/blog/authoring/web/PostHistoryApiTest.class
-com/blog/authoring/repository/PostRepositoryTest.class
-com/blog/authoring/service/AuthorHistoryServiceTest.class
-com/blog/shared/web/GlobalExceptionHandlerTest.class

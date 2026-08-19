@@ -241,7 +241,7 @@ o que a distribuição obrigou a resolver, e que não existia antes:
 - **manter os dois bancos coerentes** sem chave estrangeira — apagar um post publica um evento de domínio que dispara a limpeza do engajamento no outro serviço
 - **degradar com clareza na interface** — com o engajamento fora do ar, o post continua legível, a conversa avisa o que aconteceu e o formulário de comentário sai da tela
 
-o passo a passo de tudo isso, com os diagramas, os formatos e o que ficou de fora (API Gateway, Config Server, mensageria, tracing), está em [docs/MICROSSERVICO.md](docs/MICROSSERVICO.md).
+o passo a passo de tudo isso, com os diagramas, os formatos e o que ficou de fora (API Gateway, mensageria com padrão outbox, propagação de configuração sem restart, tracing distribuído), está em [docs/MICROSSERVICO.md](docs/MICROSSERVICO.md).
 
 ## histórico de dados
 

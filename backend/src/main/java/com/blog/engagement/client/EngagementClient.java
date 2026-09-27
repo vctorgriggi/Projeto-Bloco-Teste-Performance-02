@@ -1,9 +1,7 @@
 package com.blog.engagement.client;
 
 import com.blog.engagement.client.dto.CommentView;
-import com.blog.engagement.client.dto.NewComment;
 import com.blog.engagement.client.dto.NewReaction;
-import com.blog.engagement.client.dto.PurgeView;
 import com.blog.engagement.client.dto.ReactionSummaryView;
 import com.blog.engagement.client.dto.ServiceInfoView;
 import org.springframework.cloud.openfeign.FeignClient;
@@ -29,6 +27,13 @@ import java.util.List;
 // definir engagement.service.url aponta o cliente direto para um endereco fixo,
 // util para rodar a stack sem o eureka ou para apontar um teste a um servidor
 // http local.
+//
+// na quarta entrega esta interface encolheu, e o que saiu diz muito: criar comentario e
+// limpar o engajamento de um post apagado viraram mensagens (um comando e um evento, pelo
+// rabbitmq). ficou aqui o que precisa de resposta na hora -- ler a conversa, reagir e ver
+// o resumo atualizado, a regra de reacao repetida que o leitor precisa ver como 409 -- e
+// o ping. o criterio esta em docs/EVENTOS.md: vira mensagem o que o chamador nao precisa
+// esperar para seguir.
 @FeignClient(
         name = "engagement-service",
         url = "${engagement.service.url:}",
@@ -38,9 +43,6 @@ public interface EngagementClient {
 
     @GetMapping("/api/posts/{postId}/comments")
     List<CommentView> listComments(@PathVariable("postId") Long postId);
-
-    @PostMapping("/api/posts/{postId}/comments")
-    CommentView addComment(@PathVariable("postId") Long postId, @RequestBody NewComment body);
 
     @DeleteMapping("/api/comments/{commentId}")
     void deleteComment(@PathVariable("commentId") Long commentId);
@@ -56,10 +58,6 @@ public interface EngagementClient {
     ReactionSummaryView undoReaction(@PathVariable("postId") Long postId,
                                      @PathVariable("type") String type,
                                      @RequestParam("reader") String reader);
-
-    // limpeza do engajamento de um post que deixou de existir
-    @DeleteMapping("/api/posts/{postId}/engagement")
-    PurgeView purgePost(@PathVariable("postId") Long postId);
 
     @GetMapping("/api/engagement/ping")
     ServiceInfoView ping();

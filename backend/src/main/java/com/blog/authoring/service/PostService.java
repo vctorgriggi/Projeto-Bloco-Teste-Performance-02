@@ -68,8 +68,9 @@ public class PostService {
         // o post sai daqui, mas os comentarios e as reacoes dele vivem em outro
         // servico e em outro banco. em vez de chamar o engajamento direto (o que
         // faria authoring depender do outro contexto), anuncia-se o que aconteceu;
-        // quem se interessa reage. a entrega e feita depois do commit desta
-        // transacao, para nunca limpar o engajamento de um post que voltou atras.
+        // quem se interessa reage. desde a quarta entrega o anuncio vira uma linha no
+        // outbox, gravada nesta mesma transacao, e sai para o broker depois do commit
+        // (veja PostEventsOutbox). este metodo nao precisou mudar para isso.
         eventPublisher.publishEvent(new PostDeletedEvent(id));
     }
 

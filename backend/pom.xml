@@ -15,11 +15,15 @@
     <artifactId>blog-api</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>blog-api</name>
-    <description>Monolito de blog em Spring Boot - integrado ao microsservico de engajamento</description>
+    <description>Monolito de blog em Spring Boot - integrado ao microsservico de engajamento por http e por eventos</description>
 
     <properties>
         <java.version>21</java.version>
         <spring-cloud.version>2023.0.3</spring-cloud.version>
+        <!-- o boot 3.3 gerencia uma versao do testcontainers anterior ao docker 29, que
+             recusa a versao de api que ela negocia. a 1.21.4 e a primeira da linha 1.x que
+             conversa com o docker atual. -->
+        <testcontainers.version>1.21.4</testcontainers.version>
     </properties>
 
     <dependencies>
@@ -92,6 +96,17 @@
             <artifactId>spring-cloud-starter-circuitbreaker-resilience4j</artifactId>
         </dependency>
 
+        <!-- mensageria, quarta entrega -->
+
+        <!-- rabbitmq pelo spring amqp: RabbitTemplate para publicar, @RabbitListener para
+             consumir, e a declaracao de exchanges, filas e bindings como beans que o
+             RabbitAdmin cria no broker ao conectar. o starter tambem traz a
+             auto-configuracao da retentativa dos consumidores por propriedades. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
+        </dependency>
+
         <!-- banco em memoria: posts e autores continuam neste servico -->
         <dependency>
             <groupId>com.h2database</groupId>
@@ -111,12 +126,31 @@
             <artifactId>spring-boot-starter-test</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <!-- teste de integracao com um rabbitmq de verdade, em container. roda so quando
+             ha docker na maquina: sem ele, a classe e pulada em vez de falhar, e o resto
+             da suite continua sem depender de infraestrutura nenhuma. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>rabbitmq</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <dependencyManagement>
         <dependencies>
             <!-- trem 2023.0.x (Leyton), a linha do spring cloud compativel com o
-                 spring boot 3.3.x. o mesmo BOM e importado nos tres servicos. -->
+                 spring boot 3.3.x. o mesmo BOM e importado em todos os servicos. -->
             <dependency>
                 <groupId>org.springframework.cloud</groupId>
                 <artifactId>spring-cloud-dependencies</artifactId>

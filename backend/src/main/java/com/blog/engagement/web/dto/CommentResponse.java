@@ -10,12 +10,17 @@ import java.time.Instant;
 // o from() agora parte do que veio do microsservico, e nao mais de uma entidade
 // jpa. e a unica diferenca visivel deste arquivo, e ela resume bem a mudanca: o
 // monolito deixou de ser dono do dado e passou a ser dono do contrato.
+//
+// a quarta entrega acrescentou o submissionId no fim, e so acrescentou: e como a
+// interface reconhece na listagem o recado que ela enviou pela fila e mostrava como
+// pendente. campo novo nao quebra quem ja consumia.
 public record CommentResponse(
         Long id,
         Long postId,
         String authorName,
         String content,
-        Instant createdAt
+        Instant createdAt,
+        String submissionId
 ) {
     public static CommentResponse from(CommentView comment) {
         return new CommentResponse(
@@ -23,7 +28,8 @@ public record CommentResponse(
                 comment.postId(),
                 comment.authorName(),
                 comment.content(),
-                comment.createdAt()
+                comment.createdAt(),
+                comment.submissionId()
         );
     }
 }

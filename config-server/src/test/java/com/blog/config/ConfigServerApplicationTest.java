@@ -62,6 +62,18 @@ class ConfigServerApplicationTest {
                 .contains("eureka.client.service-url.defaultZone");
     }
 
+    // o endereco do broker segue a mesma logica do eureka: os dois servicos precisam, e
+    // ele fica no coringa. as politicas de consumo, por outro lado, sao de cada um
+    @Test
+    void oEnderecoDoBrokerChegaAOsDoisServicos_eAsPoliticasDeConsumoACadaUm() {
+        assertThat(configuracaoDe("blog-api").getBody())
+                .contains("spring.rabbitmq.host")
+                .contains("blog.messaging.outbox.relay-interval-ms");
+        assertThat(configuracaoDe("engagement-service").getBody())
+                .contains("spring.rabbitmq.host")
+                .contains("spring.rabbitmq.listener.simple.max-concurrency");
+    }
+
     // um servico desconhecido nao e erro: recebe apenas o coringa. e o comportamento
     // esperado do config server, e conferir isso evita a interpretacao errada de que
     // "respondeu 200" significa "achou o arquivo daquele servico".

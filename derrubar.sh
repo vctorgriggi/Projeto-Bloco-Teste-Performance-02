@@ -2,6 +2,9 @@
 #
 # derruba tudo o que o ./subir.sh subiu.
 #
+#   ./derrubar.sh              encerra os servicos e para o broker (as filas ficam no volume)
+#   ./derrubar.sh --limpar     idem, e apaga o volume do broker: filas e mensagens somem
+#
 # encerra pelas portas, e nao apenas pelos pids anotados, porque o spring-boot:run pode
 # ter forkado uma jvm filha: matar o processo do maven deixaria o servico de pe e a porta
 # ocupada, e a proxima subida falharia sem explicacao obvia.
@@ -33,6 +36,19 @@ if [ -f "$LOGS/pids" ]; then
         [ -n "$pid" ] && kill "$pid" 2>/dev/null
     done < "$LOGS/pids"
     rm -f "$LOGS/pids"
+fi
+
+# o broker para, mas o container e o volume ficam: filas duraveis e mensagens
+# persistentes sobrevivem, e a proxima subida encontra o que estava esperando. o
+# --limpar e para quando se quer comecar do zero.
+if command -v docker >/dev/null 2>&1 && docker ps -a --format '{{.Names}}' 2>/dev/null | grep -q '^blog-rabbitmq$'; then
+    if [ "${1:-}" = "--limpar" ]; then
+        ( cd "$RAIZ" && docker compose down -v ) >/dev/null 2>&1
+        cinza "broker removido, com o volume (filas e mensagens apagadas)"
+    else
+        ( cd "$RAIZ" && docker compose stop rabbitmq ) >/dev/null 2>&1
+        cinza "broker parado (filas preservadas; ./derrubar.sh --limpar para apagar)"
+    fi
 fi
 
 sleep 3

@@ -7,12 +7,18 @@ import java.time.Instant;
 // o formato de saida foi mantido campo a campo igual ao do monolito antes da
 // migracao. era o que o front ja consumia, e manter o contrato foi o que permitiu
 // mover a entidade de processo sem mexer na tela de comentarios.
+//
+// a quarta entrega acrescentou um campo, e so acrescentou: o submissionId, que e como
+// a interface reconhece na listagem o recado que ela mesma enviou pela fila. campo novo
+// no fim nao quebra quem ja consumia, porque o jackson dos dois lados ignora o que nao
+// conhece.
 public record CommentResponse(
         Long id,
         Long postId,
         String authorName,
         String content,
-        Instant createdAt
+        Instant createdAt,
+        String submissionId
 ) {
     public static CommentResponse from(Comment comment) {
         return new CommentResponse(
@@ -20,7 +26,8 @@ public record CommentResponse(
                 comment.getPostId(),
                 comment.getAuthorName(),
                 comment.getContent(),
-                comment.getCreatedAt()
+                comment.getCreatedAt(),
+                comment.getSubmissionId()
         );
     }
 }

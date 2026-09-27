@@ -2,14 +2,16 @@
 
 blog em Spring Boot com front-end em React. autores escrevem posts, posts viram de rascunho para publicado, e leitores comentam e reagem.
 
-o projeto começou como um monólito organizado em camadas e bounded contexts (primeira entrega), evoluiu para uma camada de persistência mais completa, com histórico de mudanças dos dados e testes automatizados (segunda entrega), e agora se partiu: o contexto de engajamento saiu do monólito e virou um **microsserviço** com processo, banco e deploy próprios, com os dois serviços conversando por rede através de Spring Cloud (terceira entrega).
+o projeto começou como um monólito organizado em camadas e bounded contexts (primeira entrega), evoluiu para uma camada de persistência mais completa, com histórico de mudanças dos dados e testes automatizados (segunda entrega), e se partiu: o contexto de engajamento saiu do monólito e virou um **microsserviço** com processo, banco e deploy próprios, com os dois serviços conversando por rede através de Spring Cloud (terceira entrega). agora a conversa entre eles ficou **orientada a eventos**: onde quem chama não precisa da resposta para seguir, a chamada HTTP deu lugar a mensagens no **RabbitMQ** — o comentário virou um comando em fila, o post apagado virou um evento publicado por outbox, e a estante ganhou contadores alimentados pelos eventos do engajamento (quarta entrega).
 
-a explicação completa da arquitetura, com os diagramas de componentes e de sequência, está em [docs/ARQUITETURA.md](docs/ARQUITETURA.md); os detalhes da camada de persistência e do histórico estão em [docs/PERSISTENCIA.md](docs/PERSISTENCIA.md); e o microsserviço, a integração distribuída e os endpoints novos estão em [docs/MICROSSERVICO.md](docs/MICROSSERVICO.md).
+a explicação completa da arquitetura, com os diagramas de componentes e de sequência, está em [docs/ARQUITETURA.md](docs/ARQUITETURA.md); os detalhes da camada de persistência e do histórico estão em [docs/PERSISTENCIA.md](docs/PERSISTENCIA.md); o microsserviço e a integração por HTTP estão em [docs/MICROSSERVICO.md](docs/MICROSSERVICO.md); e a arquitetura orientada a eventos — prós e contras, topologia, padrões de mensagem, fluxos e o roteiro de demonstração — está em [docs/EVENTOS.md](docs/EVENTOS.md).
 
 ## stack
 
 - Java 21 e Spring Boot 3.3 (web, data jpa, validation)
 - Spring Cloud 2023.0.3: Config (configuração central), Eureka (descoberta), OpenFeign (chamada declarativa), LoadBalancer, Resilience4j (circuit breaker)
+- RabbitMQ 3.13 com Spring AMQP (`spring-boot-starter-amqp`): exchanges, filas duráveis, dead letter, publisher confirms
+- Docker, só para o RabbitMQ (e para os testes de integração com Testcontainers)
 - H2 em memória, um banco por serviço (zera a cada restart, sem precisar instalar banco)
 - Hibernate Envers e Spring Data Envers para o histórico de dados
 - React 18 com Vite
@@ -17,7 +19,7 @@ a explicação completa da arquitetura, com os diagramas de componentes e de seq
 
 ## estrutura
 
-o sistema são quatro processos de back-end e um front-end. cada serviço é um projeto Maven independente, com o seu próprio wrapper — é o que significa poder ser implantado sozinho.
+o sistema são quatro processos de back-end, um broker de mensagens e um front-end. cada serviço é um projeto Maven independente, com o seu próprio wrapper — é o que significa poder ser implantado sozinho.
 
 ```
 .
@@ -27,6 +29,7 @@ o sistema são quatro processos de back-end e um front-end. cada serviço é um 
 ├── engagement-service   o microsserviço: comentários e reações       :8081
 ├── frontend             a interface (React + Vite)                  :5173
 ├── docs                 documentação de arquitetura
+├── docker-compose.yml   o broker (RabbitMQ)                          :5672, painel :15672
 ├── subir.sh             sobe tudo na ordem certa
 └── derrubar.sh          encerra tudo
 ```
@@ -36,7 +39,11 @@ os dois primeiros são infraestrutura: não têm domínio nem banco, e existem p
 ```mermaid
 flowchart LR
     FE["frontend :5173"] -->|"HTTP"| MONO["backend :8080<br/>posts, autores"]
-    MONO -->|"HTTP via Feign"| ENG["engagement-service :8081<br/>comentários, reações"]
+    MONO -->|"HTTP via Feign<br/>(leituras, reações)"| ENG["engagement-service :8081<br/>comentários, reações"]
+    MONO -->|"comment.register<br/>post.deleted"| MQ{{"RabbitMQ :5672"}}
+    MQ -->|"comandos e eventos"| ENG
+    ENG -->|"comment.* reaction.*<br/>engagement.*"| MQ
+    MQ -->|"contadores"| MONO
     MONO -.-> EUR[["discovery-server :8761"]]
     ENG -.-> EUR
     MONO -.propriedades.-> CFG[["config-server :8888"]]
@@ -45,25 +52,36 @@ flowchart LR
     ENG --> DB2[("engagementdb")]
 ```
 
-o navegador fala **apenas** com o monólito; o engajamento é alcançado por dentro, servidor a servidor. os dois bancos são separados de verdade: não há junção nem chave estrangeira entre `posts` e `comments`.
+o navegador fala **apenas** com o monólito; o engajamento é alcançado por dentro, servidor a servidor — por HTTP quando o monólito precisa da resposta na hora, e pelo broker quando não precisa. os dois bancos são separados de verdade: não há junção nem chave estrangeira entre `posts` e `comments`.
 
 ## como rodar
 
-precisa de um JDK 21 e do Node 18+ instalados. o Maven vem junto pelo wrapper.
+precisa de um JDK 21, do Node 18+ e do Docker instalados. o Maven vem junto pelo wrapper; o Docker é só para o RabbitMQ.
 
 ### tudo de uma vez
 
 ```bash
-./subir.sh              # sobe os quatro serviços e o front-end
-./subir.sh --sem-front  # apenas os serviços
-./derrubar.sh           # encerra tudo
+./subir.sh              # sobe o broker, os quatro serviços e o front-end
+./subir.sh --sem-front  # o broker e os serviços
+./derrubar.sh           # encerra tudo (o broker para, as filas ficam guardadas)
+./derrubar.sh --limpar  # idem, e apaga as filas e mensagens do broker
 ```
 
-o script sobe na ordem certa, espera cada peça responder antes de seguir, instala as dependências do front se faltarem e avisa quando o monólito e o microsserviço se encontraram. os logs de cada processo ficam em `.logs/`. se um serviço morrer no startup, ele mostra o fim do log na hora, em vez de esperar o timeout.
+o script sobe o RabbitMQ por `docker compose`, sobe os serviços na ordem certa, espera cada peça responder antes de seguir, instala as dependências do front se faltarem e avisa quando o monólito e o microsserviço se encontraram. os logs de cada processo ficam em `.logs/`. se um serviço morrer no startup, ele mostra o fim do log na hora, em vez de esperar o timeout.
 
 ### ou, um terminal por serviço
 
 **a ordem importa**: o config server serve as propriedades dos serviços de negócio, e o registro precisa existir para eles se encontrarem. subir fora de ordem funciona — o cliente de configuração tem retry, e o monólito responde 503 enquanto não vê o engajamento — mas demora e polui o log.
+
+### 0. broker de mensagens
+
+```bash
+docker compose up -d rabbitmq
+```
+
+sobe o RabbitMQ em `localhost:5672`, com o painel em `http://localhost:15672` (usuário e senha `guest`). ele sobe vazio: exchanges e filas são criados pelos próprios serviços quando conectam. é o painel onde se vê as mensagens esperando nas filas e as que foram para a dead letter.
+
+sem o broker, os serviços sobem e o blog funciona, com duas exceções: enviar um comentário responde 503 (o texto continua no formulário), e os contadores da estante não se atualizam. os eventos de post apagado ficam guardados no banco do monólito e saem quando o broker aparecer.
 
 ### 1. servidor de configuração
 
@@ -167,12 +185,14 @@ tudo fica sob o prefixo `/api`. as tabelas abaixo são a API do **monólito**, q
 
 ### comentários
 
-servidos pelo microsserviço, através do monólito. as rotas são **as mesmas de antes da migração**: o front não mudou uma linha por causa dela.
+servidos pelo microsserviço, através do monólito. as rotas são **as mesmas de antes da migração**.
+
+desde a quarta entrega, o `POST` responde **202 Accepted**, e não mais 201: o comentário vira um comando na fila do engajamento e é gravado logo em seguida — ou quando o engajamento voltar, se ele estiver fora do ar. a resposta traz o `submissionId`, e o comentário aparece na listagem com esse mesmo id. o 503 nessa rota passou a significar que o **broker** está fora, e não o microsserviço.
 
 | método | rota                           | o que faz                       |
 | ------ | ------------------------------ | ------------------------------- |
 | GET    | `/api/posts/{postId}/comments` | lista os comentários de um post |
-| POST   | `/api/posts/{postId}/comments` | adiciona um comentário          |
+| POST   | `/api/posts/{postId}/comments` | envia um comentário (202, entra na fila) |
 | DELETE | `/api/comments/{commentId}`    | remove um comentário            |
 
 ### reações (novo)
@@ -189,9 +209,17 @@ os tipos são `CORACAO`, `CAFE` e `IDEIA`, e o vocabulário pertence ao microsse
 
 | método | rota                      | o que faz                                              |
 | ------ | ------------------------- | ------------------------------------------------------ |
-| GET    | `/api/engagement/status`  | se o engajamento está disponível e quantas instâncias estão registradas |
+| GET    | `/api/engagement/status`  | se o engajamento e o broker estão disponíveis, quantas instâncias estão registradas e quantos eventos esperam no outbox |
 
-responde sempre 200, inclusive quando o microsserviço está fora do ar — a informação "ele caiu" vem no corpo. é o que alimenta o selo no cabeçalho da interface.
+responde sempre 200, inclusive quando o microsserviço está fora do ar — a informação "ele caiu" vem no corpo. é o que alimenta os selos no cabeçalho da interface.
+
+### contadores de engajamento (novo)
+
+| método | rota                        | o que faz                                                   |
+| ------ | --------------------------- | ----------------------------------------------------------- |
+| GET    | `/api/engagement/counters`  | total de comentários e reações de cada post, numa chamada só |
+
+sai de uma cópia local que o monólito mantém a partir dos eventos do engajamento, e não de uma chamada ao microsserviço: responde mesmo com ele fora do ar. o `updatedAt` de cada linha diz de quando é a informação.
 
 ### exemplo
 
@@ -209,10 +237,14 @@ curl -X POST http://localhost:8080/api/posts \
 # publicar o post
 curl -X POST http://localhost:8080/api/posts/1/publish
 
-# comentar (grava no banco do microsserviço)
+# comentar (vira um comando na fila; o microsserviço grava em seguida)
 curl -X POST http://localhost:8080/api/posts/1/comments \
   -H 'Content-Type: application/json' \
   -d '{"authorName":"Carla","content":"ótimo texto"}'
+# 202 {"submissionId":"...","status":"PENDING",...}
+
+# os totais de todos os posts, da cópia local
+curl http://localhost:8080/api/engagement/counters
 
 # reagir
 curl -X POST http://localhost:8080/api/posts/1/reactions \
@@ -239,9 +271,30 @@ o que a distribuição obrigou a resolver, e que não existia antes:
 - **falhar bem** quando ele não responde — circuit breaker com Resilience4j, e 503 em vez de 500 ou de uma lista vazia mentindo que o post não tem conversa
 - **preservar o significado do erro** na travessia — 404 continua 404 e 409 continua 409, com a mensagem escrita pelo serviço dono da regra
 - **manter os dois bancos coerentes** sem chave estrangeira — apagar um post publica um evento de domínio que dispara a limpeza do engajamento no outro serviço
-- **degradar com clareza na interface** — com o engajamento fora do ar, o post continua legível, a conversa avisa o que aconteceu e o formulário de comentário sai da tela
+- **degradar com clareza na interface** — com o engajamento fora do ar, o post continua legível e a conversa avisa o que aconteceu (desde a quarta entrega, o formulário de comentário fica: o recado espera na fila)
 
-o passo a passo de tudo isso, com os diagramas, os formatos e o que ficou de fora (API Gateway, mensageria com padrão outbox, propagação de configuração sem restart, tracing distribuído), está em [docs/MICROSSERVICO.md](docs/MICROSSERVICO.md).
+o passo a passo de tudo isso, com os diagramas, os formatos e o que ficou de fora, está em [docs/MICROSSERVICO.md](docs/MICROSSERVICO.md). um dos itens que ficaram de fora ali — mensageria com padrão outbox — é o assunto da seção seguinte.
+
+## os eventos
+
+a quarta entrega trocou por mensagens no RabbitMQ as chamadas síncronas em que quem chama **não precisa da resposta para seguir**. o critério é uma pergunta só, e o que ela separou:
+
+| interação | ficou como | por quê |
+| --- | --- | --- |
+| ler a conversa, reagir, apagar comentário | HTTP (Feign) | o leitor precisa da resposta agora, e o 409 de reação repetida importa na hora |
+| enviar um comentário | **comando em fila** (`comment.register`) | basta saber que foi aceito; com o engajamento fora, o recado espera na fila em vez de o formulário sumir |
+| avisar que um post foi apagado | **evento via outbox** (`post.deleted`) | é um fato; gravado na mesma transação da exclusão, nunca se perde, e sai quando o broker estiver no ar |
+| contadores da estante | **eventos de estado** (`comment.*`, `reaction.*`, `engagement.*`) | o monólito mantém uma cópia local e responde sem chamar ninguém |
+
+o que isso exigiu, e que não existia antes:
+
+- **uma topologia** com exchanges topic (eventos), direct (comandos) e fanout (eventos sem assinante), filas duráveis e uma dead letter para cada fila — tudo declarado pelos próprios serviços
+- **um outbox transacional** no monólito, para o evento de post apagado sair no mesmo commit da exclusão, com um relay que só marca como publicado depois da confirmação do broker
+- **consumidores idempotentes**, porque o broker entrega pelo menos uma vez — cada um com a estratégia que o seu dado permite
+- **retentativa com espera exponencial** para falhas passageiras, e **dead letter imediata** para mensagem inválida ou ilegível
+- **um estado "na fila" na interface**, porque o comentário aceito ainda não está gravado
+
+prós e contras da abordagem, os sete padrões com código, os diagramas dos fluxos, a tabela do que acontece quando cada peça cai, três defeitos que só apareceram com a stack no ar e o roteiro de demonstração estão em [docs/EVENTOS.md](docs/EVENTOS.md).
 
 ## histórico de dados
 
@@ -253,20 +306,22 @@ as reações não são auditadas: auditar cada clique encheria a tabela de hist�
 
 ## testes
 
-são 93 testes automatizados, e cada serviço roda os seus a partir do próprio diretório com `./mvnw test`.
+são 133 testes automatizados, e cada serviço roda os seus a partir do próprio diretório com `./mvnw test`.
 
 | onde                | quantos | o que cobre                                                        |
 | ------------------- | ------- | ------------------------------------------------------------------ |
-| `backend`           | 51      | persistência, histórico, tratamento de erro e a fronteira de rede   |
-| `engagement-service`| 37      | repositórios, regras de reação, API e a auditoria do comentário     |
-| `config-server`     | 4       | serve a configuração de cada serviço pelos nomes que os clientes usam |
+| `backend`           | 73      | persistência, histórico, tratamento de erro, a fronteira de rede, o outbox, os contadores e a mensageria com um RabbitMQ real |
+| `engagement-service`| 54      | repositórios, regras de reação, API, auditoria do comentário, os consumidores e a publicação de eventos, e a mensageria com um RabbitMQ real |
+| `config-server`     | 5       | serve a configuração de cada serviço pelos nomes que os clientes usam |
 | `discovery-server`  | 1       | o registro sobe e responde                                          |
 
 na camada de persistência há testes de repositório com `@DataJpaTest` (consultas derivadas, agregação por tipo, restrições de unicidade, valores padrão e travamento otimista) e testes de histórico com `@SpringBootTest` que exercitam o Envers de ponta a ponta — o ciclo de vida completo de um post e o endpoint de consulta.
 
 na integração distribuída, os testes de API do monólito trocam o cliente do microsserviço por um dublê, o que permite cobrir justamente os caminhos difíceis de provocar de outra forma: o 503 quando o engajamento cai, o 404 que atravessa a fronteira sem virar erro de infraestrutura, e a verificação de que o post é validado **antes** de qualquer chamada de rede. o `EngagementErrorDecoder` e o fallback têm testes de unidade próprios.
 
-o que os testes automatizados não cobrem é a conversa real entre os processos no ar — isso foi verificado à mão, e o roteiro da demonstração está em [docs/MICROSSERVICO.md](docs/MICROSSERVICO.md).
+na mensageria, os testes chamam os consumidores como métodos e dublam o publicador, o que cobre as decisões de cada um sem precisar de broker: a mensagem repetida que não duplica, a atrasada que é descartada, a transação revertida que não publica nada, o relay que para na primeira falha. os dois testes de integração (`MessagingIntegrationTest`) sobem um **RabbitMQ de verdade em container**, com Testcontainers, e verificam o que só o broker faz: o roteamento, a confirmação de publicação, a dead letter e o alternate exchange. eles precisam de Docker; sem ele, são pulados em vez de falhar.
+
+a conversa entre os processos no ar — incluindo derrubar o microsserviço e o broker no meio — foi verificada subindo a stack, e o roteiro está em [docs/EVENTOS.md](docs/EVENTOS.md).
 
 ## erros
 
@@ -275,4 +330,4 @@ a API responde erro sempre no mesmo formato, com `timestamp`, `status`, `message
 - 400 quando o corpo não passa na validação (traz a lista de campos com problema) ou quando o microsserviço recusa o valor enviado
 - 404 quando o recurso não existe, de qualquer um dos dois lados
 - 409 quando uma regra é violada (email de autor repetido, reação repetida do mesmo leitor) ou quando há conflito de concorrência/integridade na gravação
-- 503 quando o microsserviço de engajamento não responde — a requisição estava correta, o sistema é que está com uma peça faltando
+- 503 quando o microsserviço de engajamento não responde — a requisição estava correta, o sistema é que está com uma peça faltando. no envio de comentário, o 503 é do broker: o microsserviço fora não impede comentar

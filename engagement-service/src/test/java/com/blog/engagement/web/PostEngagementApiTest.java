@@ -18,10 +18,11 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-// a rota de limpeza que o monolito chama quando um post e apagado. sem chave
-// estrangeira entre os bancos, e este endpoint que evita comentario orfao, entao vale
-// testar tanto o caso normal quanto a idempotencia (a segunda chamada nao pode falhar,
-// porque a notificacao pode ser reentregue).
+// a rota de limpeza de um post apagado. desde a quarta entrega o caminho normal e o
+// evento post.deleted (coberto no EngagementEventPublisherTest e no teste de
+// integracao), e esta rota ficou como ferramenta de operacao -- mas a regra e a mesma,
+// entao vale testar tanto o caso normal quanto a idempotencia (a segunda chamada nao
+// pode falhar, porque a notificacao pode ser reentregue).
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")

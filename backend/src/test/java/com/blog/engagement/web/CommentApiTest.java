@@ -4,11 +4,13 @@ import com.blog.authoring.domain.Post;
 import com.blog.authoring.repository.PostRepository;
 import com.blog.engagement.client.EngagementClient;
 import com.blog.engagement.client.dto.CommentView;
-import com.blog.engagement.client.dto.NewComment;
+import com.blog.engagement.messaging.CommentCommandSender;
+import com.blog.engagement.messaging.RegisterCommentCommand;
 import com.blog.shared.exception.ResourceNotFoundException;
 import com.blog.shared.exception.ServiceUnavailableException;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -20,8 +22,8 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.time.Instant;
 import java.util.List;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.verify;
@@ -36,6 +38,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 // entra dublado de proposito: o que se testa aqui e o papel que sobrou para este
 // servico -- validar o post, delegar, traduzir a resposta e traduzir a falha --, e nao
 // o comportamento do engajamento, que tem os testes dele no proprio projeto.
+//
+// desde a quarta entrega a escrita sai por outro caminho, um comando na fila, e o
+// remetente desse comando entra dublado tambem.
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
@@ -50,6 +55,9 @@ class CommentApiTest {
     @MockBean
     private EngagementClient engagementClient;
 
+    @MockBean
+    private CommentCommandSender commandSender;
+
     @AfterEach
     void limparBanco() {
         postRepository.deleteAll();
@@ -63,8 +71,8 @@ class CommentApiTest {
     void getComentarios_delegaAoMicrosservicoETraduzOFormato() throws Exception {
         Long postId = postExistente();
         given(engagementClient.listComments(postId)).willReturn(List.of(
-                new CommentView(10L, postId, "Carla", "primeiro", Instant.parse("2026-01-01T10:00:00Z")),
-                new CommentView(11L, postId, "Diego", "segundo", Instant.parse("2026-01-01T11:00:00Z"))));
+                new CommentView(10L, postId, "Carla", "primeiro", Instant.parse("2026-01-01T10:00:00Z"), null),
+                new CommentView(11L, postId, "Diego", "segundo", Instant.parse("2026-01-01T11:00:00Z"), null)));
 
         mockMvc.perform(get("/api/posts/{postId}/comments", postId))
                 .andExpect(status().isOk())
@@ -74,22 +82,59 @@ class CommentApiTest {
                 .andExpect(jsonPath("$[1].content").value("segundo"));
     }
 
+    // o comentario nao e gravado aqui nem por http: vira um comando na fila, e a api
+    // responde 202 -- aceito, ainda nao gravado. o corpo traz o id do envio, que e como a
+    // interface reconhece o recado quando ele aparecer na listagem
     @Test
-    void postComentario_devolve201ERepassaOCorpoTraduzido() throws Exception {
+    void postComentario_enviaComandoNaFilaEDevolve202ComOEnvioPendente() throws Exception {
         Long postId = postExistente();
-        given(engagementClient.addComment(eq(postId), any(NewComment.class))).willReturn(
-                new CommentView(10L, postId, "Carla", "que texto bom", Instant.parse("2026-01-01T10:00:00Z")));
 
         mockMvc.perform(post("/api/posts/{postId}/comments", postId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"authorName":"Carla","content":"que texto bom"}
                                 """))
-                .andExpect(status().isCreated())
-                .andExpect(jsonPath("$.id").value(10))
+                .andExpect(status().isAccepted())
+                .andExpect(jsonPath("$.status").value("PENDING"))
+                .andExpect(jsonPath("$.submissionId").isNotEmpty())
                 .andExpect(jsonPath("$.authorName").value("Carla"));
 
-        verify(engagementClient).addComment(postId, new NewComment("Carla", "que texto bom"));
+        ArgumentCaptor<RegisterCommentCommand> comando = ArgumentCaptor.forClass(RegisterCommentCommand.class);
+        verify(commandSender).send(comando.capture());
+        assertThat(comando.getValue().postId()).isEqualTo(postId);
+        assertThat(comando.getValue().content()).isEqualTo("que texto bom");
+        assertThat(comando.getValue().submittedAt()).isNotNull();
+
+        // escrever nao passa mais pela chamada http ao microsservico
+        verifyNoInteractions(engagementClient);
+    }
+
+    // com o broker fora, o comando nao sai e o leitor fica sabendo: 503, e o texto
+    // continua no formulario do lado de la. nada e aceito para depois se perder
+    @Test
+    void brokerForaDoAr_comentarioDevolve503() throws Exception {
+        Long postId = postExistente();
+        willThrow(new ServiceUnavailableException("A fila de mensagens esta indisponivel", null))
+                .given(commandSender).send(any(RegisterCommentCommand.class));
+
+        mockMvc.perform(post("/api/posts/{postId}/comments", postId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"authorName":"Carla","content":"vai tentar de novo"}
+                                """))
+                .andExpect(status().isServiceUnavailable());
+    }
+
+    // a listagem traz o id do envio de cada comentario que chegou pela fila
+    @Test
+    void getComentarios_repassaOIdDoEnvio() throws Exception {
+        Long postId = postExistente();
+        given(engagementClient.listComments(postId)).willReturn(List.of(
+                new CommentView(12L, postId, "Carla", "via fila", Instant.now(), "envio-1")));
+
+        mockMvc.perform(get("/api/posts/{postId}/comments", postId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[0].submissionId").value("envio-1"));
     }
 
     // a validacao do post acontece antes de a chamada sair da maquina: e o monolito que
@@ -103,7 +148,7 @@ class CommentApiTest {
                                 """))
                 .andExpect(status().isNotFound());
 
-        verifyNoInteractions(engagementClient);
+        verifyNoInteractions(engagementClient, commandSender);
     }
 
     @Test
@@ -164,6 +209,6 @@ class CommentApiTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.fieldErrors.content").isNotEmpty());
 
-        verifyNoInteractions(engagementClient);
+        verifyNoInteractions(engagementClient, commandSender);
     }
 }

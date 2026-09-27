@@ -1,6 +1,6 @@
 package com.blog.engagement.client;
 
-import com.blog.engagement.client.dto.NewComment;
+import com.blog.engagement.client.dto.NewReaction;
 import com.blog.engagement.client.dto.NewReaction;
 import com.blog.engagement.client.dto.ServiceInfoView;
 import com.blog.shared.exception.BusinessRuleException;
@@ -57,7 +57,7 @@ class EngagementFallbackFactoryTest {
         BusinessRuleException original = new BusinessRuleException("conflito");
         EngagementClient fallback = factory.create(new ExecutionException("embrulhado", original));
 
-        assertThatThrownBy(() -> fallback.addComment(1L, new NewComment("Carla", "oi")))
+        assertThatThrownBy(() -> fallback.react(1L, new NewReaction("Carla", "CORACAO")))
                 .isSameAs(original);
     }
 

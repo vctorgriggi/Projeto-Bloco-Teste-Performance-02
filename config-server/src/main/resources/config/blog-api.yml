@@ -21,6 +21,27 @@ eureka:
     registry-fetch-interval-seconds: 10
 
 spring:
+  # politica de consumo da fila dos contadores (mensageria, quarta entrega). mora aqui,
+  # e nao junto do bloco blog.messaging la embaixo, porque uma chave de primeiro nivel
+  # repetida no mesmo arquivo e yaml invalido -- o config server responderia 500 para o
+  # monolito inteiro. o teste do config server pegou isso.
+  rabbitmq:
+    listener:
+      simple:
+        # o monolito consome uma fila so, a dos contadores. um consumidor basta: cada
+        # mensagem e um upsert pequeno, e processar em ordem evita trabalho descartado
+        concurrency: 1
+        max-concurrency: 1
+        prefetch: 20
+        # quantas vezes tentar uma mensagem antes de mandar para a dead letter, e com que
+        # espera entre as tentativas. uma mensagem invalida nao entra nessa conta: vai
+        # direto (veja MessagingConfig)
+        retry:
+          max-attempts: 3
+          initial-interval: 1s
+          multiplier: 2
+          max-interval: 5s
+
   cloud:
     openfeign:
       client:
@@ -64,3 +85,16 @@ resilience4j:
         # e o circuito abriria sem que nada estivesse errado.
         timeout-duration: 5s
         cancel-running-future: true
+
+# ---------------------------------------------------------------------------------
+# mensageria (quarta entrega)
+# ---------------------------------------------------------------------------------
+
+blog:
+  messaging:
+    # quanto esperar pela confirmacao do broker antes de considerar a publicacao falha
+    confirm-timeout-ms: 5000
+    outbox:
+      # de quanto em quanto tempo o relay procura eventos pendentes. e o atraso maximo
+      # entre o commit de uma exclusao e o evento sair, com o broker de pe
+      relay-interval-ms: 2000

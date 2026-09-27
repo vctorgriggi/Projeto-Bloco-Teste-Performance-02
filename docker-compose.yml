@@ -1,0 +1,33 @@
+# o broker de mensagens da quarta entrega.
+#
+# e a unica peca da stack que nao e um projeto java deste repositorio, e por isso sobe
+# por container em vez de por ./mvnw. o ./subir.sh chama este arquivo sozinho; para subir
+# so o broker: docker compose up -d rabbitmq
+#
+# a imagem -management traz o painel web (http://localhost:15672, guest/guest), que e
+# onde se ve as filas enchendo e esvaziando, as dead letters e o que cada exchange roteia.
+# para a demonstracao, ele vale tanto quanto o painel do eureka.
+#
+# nenhuma fila e declarada aqui: exchanges, filas e bindings sao criados pelos proprios
+# servicos quando conectam (veja MessagingConfig em cada um). o broker sobe vazio.
+services:
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: blog-rabbitmq
+    hostname: blog-rabbitmq   # o rabbitmq guarda os dados por nome de host; fixo, sobrevive a recriacao
+    ports:
+      - "5672:5672"     # amqp, onde os servicos conectam
+      - "15672:15672"   # painel de administracao
+    volumes:
+      # as filas sao duraveis e as mensagens persistentes, mas isso so vale se o disco
+      # do broker sobreviver. com o volume, um "docker compose restart" nao perde o que
+      # estava esperando na fila -- que e justamente o que a demonstracao quer mostrar.
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
+volumes:
+  rabbitmq-data:

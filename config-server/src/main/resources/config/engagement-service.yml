@@ -23,3 +23,26 @@ management:
   endpoint:
     health:
       show-details: always
+
+# ---------------------------------------------------------------------------------
+# mensageria (quarta entrega)
+# ---------------------------------------------------------------------------------
+
+spring:
+  rabbitmq:
+    listener:
+      simple:
+        # consumidores concorrentes por fila, por instancia. o spring abre mais
+        # consumidores (ate max-concurrency) quando a fila acumula e fecha quando esvazia.
+        # somado a subir mais instancias, e o botao de escala da escrita de comentarios --
+        # e e ajuste de operacao, nao de codigo
+        concurrency: 1
+        max-concurrency: 4
+        # quantas mensagens cada consumidor pega adiantado. baixo o bastante para a carga
+        # se dividir entre os consumidores em vez de um so segurar a fila inteira
+        prefetch: 10
+        retry:
+          max-attempts: 3
+          initial-interval: 1s
+          multiplier: 2
+          max-interval: 5s

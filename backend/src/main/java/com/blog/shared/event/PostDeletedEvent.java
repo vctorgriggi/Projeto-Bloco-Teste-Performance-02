@@ -2,10 +2,11 @@ package com.blog.shared.event;
 
 // evento de dominio publicado quando um post e apagado.
 //
-// mora em shared de proposito: authoring publica e engagement escuta, e nenhum dos
-// dois passa a depender do pacote do outro. hoje o evento e entregue dentro do
-// mesmo processo pelo ApplicationEventPublisher do spring; se um dia virar uma
-// mensagem em um broker, o unico ponto a trocar e a entrega, nao quem publica nem
-// quem reage.
+// mora em shared de proposito: quem publica nao precisa conhecer quem escuta. ate a
+// terceira entrega o evento era entregue dentro do processo e escutado pelo contexto
+// de engajamento, que chamava o microsservico por http. o comentario original dizia
+// que, se um dia virasse mensagem em um broker, o unico ponto a trocar seria a
+// entrega -- e foi o que aconteceu na quarta: quem escuta agora e o PostEventsOutbox,
+// que grava a mensagem de integracao na mesma transacao, e o PostService nao mudou.
 public record PostDeletedEvent(Long postId) {
 }

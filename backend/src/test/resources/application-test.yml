@@ -22,6 +22,19 @@ spring:
     config:
       enabled: false
 
+  # nenhum teste comum depende de um rabbitmq no ar. os consumidores nao sao iniciados
+  # (os testes chamam os listeners como metodos), e a porta 0 faz qualquer tentativa de
+  # conexao falhar na hora, pelo mesmo motivo da url invalida do engajamento mais abaixo.
+  # o teste que precisa de um broker de verdade (MessagingIntegrationTest) sobe o dele em
+  # um container.
+  rabbitmq:
+    port: 0
+    listener:
+      simple:
+        auto-startup: false
+        retry:
+          initial-interval: 100ms
+
 # como as propriedades de ambiente agora vem do config server, e ele nao e consultado aqui,
 # o perfil de teste precisa fornecer o que o contexto exige para subir. e uma consequencia
 # real de centralizar configuracao: o ambiente de teste passa a ser um ambiente como os
@@ -53,3 +66,16 @@ eureka:
 engagement:
   service:
     url: http://localhost:0
+
+# as duas pecas da mensageria que rodariam sozinhas em segundo plano ficam desligadas: o
+# relay do outbox (os testes o chamam direto, sem depender de tempo) e o pedido de estado
+# ao engajamento no startup.
+blog:
+  messaging:
+    outbox:
+      relay-enabled: false
+    request-snapshot-on-startup: false
+
+logging:
+  level:
+    org.springframework.amqp: error

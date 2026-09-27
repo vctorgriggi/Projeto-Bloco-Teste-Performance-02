@@ -601,13 +601,19 @@ textarea {
   max-width: 200px;
 }
 
-/* selo de disponibilidade do microsservico. num sistema distribuido uma peca pode
-   cair sozinha, e o leitor merece saber antes de tentar comentar. */
+/* selos de disponibilidade: o microsservico (conversa) e o broker (fila). num sistema
+   distribuido uma peca pode cair sozinha, e o leitor merece saber antes de agir. */
+.service-badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-left: auto;
+}
+
 .service-badge {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  margin-left: auto;
   font-size: 0.75rem;
   font-family: 'Klee One', cursive;
   padding: 3px 12px;
@@ -631,14 +637,41 @@ textarea {
   flex-shrink: 0;
 }
 
-/* em telas estreitas o selo desce para a propria linha, abaixo da navegacao */
+/* quantos eventos ainda esperam no outbox para sair */
+.service-count {
+  font-family: inherit;
+  font-size: 0.7rem;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.7);
+}
+
+/* em telas estreitas os selos descem para a propria linha, abaixo da navegacao */
 @media (max-width: 560px) {
   .site-nav {
     flex-wrap: wrap;
   }
 
-  .service-badge {
+  .service-badges {
     margin-left: 0;
     flex-basis: 100%;
   }
+}
+
+/* comentario aceito e ainda na fila: mesmo cartao, mais apagado, com a etiqueta */
+.comment-pending {
+  border-style: dashed;
+  opacity: 0.75;
+}
+
+.tag-queued {
+  background: #e6eef0;
+  color: var(--accent-deep);
+}
+
+/* totais de conversa e reacoes no cartao da estante */
+.post-engagement {
+  font-size: 0.8rem;
+  color: var(--ink-soft);
+  margin: 6px 0 0;
 }

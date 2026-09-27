@@ -22,8 +22,36 @@ spring:
     config:
       enabled: false
 
+  # nenhum teste comum depende de um rabbitmq no ar. os consumidores nao sao iniciados
+  # (os testes chamam os listeners como metodos; veja engagement.messaging abaixo), e a
+  # porta 0 faz qualquer publicacao que escape falhar na hora -- o publicador de eventos
+  # e de melhor esforco, entao a falha vai para o log e o teste segue. e o mesmo truque
+  # do endereco invalido do cliente feign no monolito: se algo tentar sair da maquina,
+  # falha rapido em vez de pendurar.
+  #
+  # o teste que precisa de um broker de verdade (MessagingIntegrationTest) sobe o dele
+  # em um container e religa os consumidores.
+  rabbitmq:
+    port: 0
+    listener:
+      simple:
+        retry:
+          initial-interval: 100ms
+
+# o que o MessagingStartup faria ao fim da subida fica desligado: anunciar o estado e
+# ligar os consumidores
+engagement:
+  messaging:
+    publish-snapshot-on-startup: false
+    start-consumers-on-ready: false
+
 eureka:
   client:
     enabled: false
     register-with-eureka: false
     fetch-registry: false
+
+logging:
+  level:
+    org.springframework.amqp: error
+    com.blog.engagement.messaging.EngagementEventPublisher: error

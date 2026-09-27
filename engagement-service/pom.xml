@@ -20,6 +20,10 @@
     <properties>
         <java.version>21</java.version>
         <spring-cloud.version>2023.0.3</spring-cloud.version>
+        <!-- o boot 3.3 gerencia uma versao do testcontainers anterior ao docker 29, que
+             recusa a versao de api que ela negocia. a 1.21.4 e a primeira da linha 1.x que
+             conversa com o docker atual. -->
+        <testcontainers.version>1.21.4</testcontainers.version>
     </properties>
 
     <dependencies>
@@ -79,6 +83,17 @@
             <artifactId>spring-boot-starter-actuator</artifactId>
         </dependency>
 
+        <!-- mensageria, quarta entrega -->
+
+        <!-- rabbitmq pelo spring amqp: RabbitTemplate para publicar, @RabbitListener para
+             consumir, e a declaracao de exchanges, filas e bindings como beans que o
+             RabbitAdmin cria no broker ao conectar. o starter tambem traz a
+             auto-configuracao da retentativa dos consumidores por propriedades. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-amqp</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>
@@ -94,6 +109,25 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- teste de integracao com um rabbitmq de verdade, em container. roda so quando
+             ha docker na maquina: sem ele, a classe e pulada em vez de falhar, e o resto
+             da suite continua sem depender de infraestrutura nenhuma. -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-testcontainers</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>rabbitmq</artifactId>
             <scope>test</scope>
         </dependency>
     </dependencies>

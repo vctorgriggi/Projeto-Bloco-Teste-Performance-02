@@ -1,49 +1,42 @@
-# Terceira Entrega: Criação de um Microsserviço
-
-No curso de Engenharia de Softwares Escaláveis, esta terceira etapa envolve expandir a aplicação monolítica anterior, introduzindo um microsserviço usando Spring Boot e Spring Cloud. Este novo componente deve se integrar de forma eficaz ao sistema maior, exemplificando práticas de desenvolvimento distribuído.
+# Quarta Entrega: Refatoração para Arquitetura Orientada a Eventos
 
 ## Objetivo da Etapa
 
-Desenvolver e integrar um microsserviço, demonstrando competência em separação de responsabilidades, comunicação entre serviços e modularização.
+Refatorar o sistema atual para adotar uma arquitetura orientada a eventos, utilizando RabbitMQ como message broker para facilitar a comunicação baseada em eventos entre os componentes do sistema.
 
 ## Subcompetências a serem Desenvolvidas
 
-### 1. Atualização do Modelo de Domínio
+### 1. Avaliação de Arquitetura Orientada a Eventos
 
-Incorporar um novo serviço no modelo de domínio, refletindo mudanças na arquitetura e nas dependências.
+Apresentar os prós e contras da arquitetura orientada a eventos, identificando cenários onde ela é mais vantajosa.
 
-### 2. Criação de Endpoints da API REST
+### 2. Desenvolvimento de Padrões de Mensagens
 
-Implementar novos endpoints para acesso ao microsserviço via REST API.
+Criar diferentes padrões de mensagens para atender diversos casos de uso, assegurando a eficácia da comunicação entre componentes.
 
-### 3. Implementação de Microsserviço
+### 3. Implementação com RabbitMQ
 
-- Usar Spring Boot para o desenvolvimento do microsserviço.
-- Aplicar Spring Cloud para facilitar a configuração e comunicação distribuídas.
+Implementar padrões de arquitetura orientada a eventos usando RabbitMQ, explorando suas capacidades como message broker.
 
-### 4. Desenvolvimento de Repositórios
+### 4. Simplificação com Spring Boot
 
-Criar repositórios dedicados para gerenciar dados específicos do microsserviço.
+Utilizar abstrações fornecidas pelo Spring Boot para facilitar a implementação de mensagens e integração com RabbitMQ.
 
-### 5. Desenvolvimento de Componentes Front-End
+### 5. Refatoração do Sistema
 
-Adicionar componentes na interface do usuário para interação com o novo microsserviço.
-
-### 6. Atualização e Criação de Testes
-
-Expandir a cobertura de testes para incluir o novo microsserviço e atualizações no sistema.
+Converter um sistema previamente acoplado em uma arquitetura orientada a eventos, focando em melhorar a escalabilidade, resiliência e eficiência na gestão de transações.
 
 ## Entregas Esperadas
 
-- **Código Fonte:** Repositório com o microsserviço e atualizações correspondentes no sistema e interface de usuário.
-- **Documentação:** Arquitetura detalhada do microsserviço, integração com o sistema, e descrição dos novos endpoints da API.
-- **Demonstração de Funcionalidade:** Apresentação prática mostrando a operação integrada do novo microsserviço.
+- **Código Fonte:** Repositório com o código do sistema refatorado para utilizar uma arquitetura orientada a eventos.
+- **Documentação:** Documentação detalhada explicando as mudanças implementadas, incluindo diagramas de arquitetura e fluxos de eventos.
+- **Demonstração de Funcionalidade:** Apresentação prática do sistema refatorado, demonstrando a eficácia da nova arquitetura em cenários simulados.
 
 ## Avaliação
 
-A avaliação considerará a funcionalidade do microsserviço, qualidade de implementação, adequação dos testes, e a clareza da documentação arquitetural.
+Os alunos serão avaliados com base na qualidade da implementação da arquitetura orientada a eventos, a eficiência da integração com RabbitMQ, a robustez dos padrões de mensagens desenvolvidos, e a clareza da documentação.
 
-Este projeto aumenta a complexidade do sistema e enriquece a experiência prática dos alunos com arquiteturas modernas de software, preparando-os para enfrentar desafios em ambientes de software distribuídos e dinâmicos.
+Este projeto permite aos alunos aplicar conceitos avançados de arquitetura de sistemas em um contexto prático, preparando-os para enfrentar desafios de sistemas distribuídos em ambientes corporativos reais.
 
 ---
 
@@ -51,90 +44,25 @@ Este projeto aumenta a complexidade do sistema e enriquece a experiência práti
 
 | Subcompetência | Onde está |
 | --- | --- |
-| Atualização do modelo de domínio | novo aggregate `Reaction` e o `Comment` migrado, em [engagement-service/src/main/java/com/blog/engagement/domain/](engagement-service/src/main/java/com/blog/engagement/domain/); modelo e dependências redesenhados em [docs/MICROSSERVICO.md](docs/MICROSSERVICO.md) e [docs/ARQUITETURA.md](docs/ARQUITETURA.md) |
-| Endpoints da API REST | rotas de reação e de status no monólito ([ReactionController](backend/src/main/java/com/blog/engagement/web/ReactionController.java), [EngagementStatusController](backend/src/main/java/com/blog/engagement/web/EngagementStatusController.java)) e a API própria do microsserviço ([engagement-service/.../web/](engagement-service/src/main/java/com/blog/engagement/web/)); tabelas em [README.md](README.md) e [docs/MICROSSERVICO.md](docs/MICROSSERVICO.md) |
-| Microsserviço com Spring Boot | projeto [engagement-service/](engagement-service/), processo próprio na porta 8081 com banco próprio |
-| Spring Cloud — comunicação distribuída | Eureka em [discovery-server/](discovery-server/), OpenFeign + LoadBalancer + Resilience4j no [EngagementClient](backend/src/main/java/com/blog/engagement/client/EngagementClient.java) |
-| Spring Cloud — configuração distribuída | Config Server em [config-server/](config-server/), com as propriedades de ambiente dos dois serviços em [config-server/src/main/resources/config/](config-server/src/main/resources/config/) |
-| Repositórios dedicados | [CommentRepository](engagement-service/src/main/java/com/blog/engagement/repository/CommentRepository.java) e [ReactionRepository](engagement-service/src/main/java/com/blog/engagement/repository/ReactionRepository.java), com consulta de agregação e projeção por interface |
-| Componentes front-end | [ReactionBar.jsx](frontend/src/components/ReactionBar.jsx), [ServiceBadge.jsx](frontend/src/components/ServiceBadge.jsx) e a degradação graciosa em [PostPage.jsx](frontend/src/pages/PostPage.jsx) |
-| Testes | 93 testes nos quatro serviços; estratégia descrita em [docs/MICROSSERVICO.md](docs/MICROSSERVICO.md) |
-| Demonstração | [subir.sh](subir.sh) sobe a stack em um comando; roteiro passo a passo na seção "demonstração" de [docs/MICROSSERVICO.md](docs/MICROSSERVICO.md) |
-
----
-
-## Template de Rubrica para ser utilizado com a extensão Rubricator
-
-### 3. Criar um microsserviço usando Spring Boot e Spring Cloud, integrando-o a uma aplicação existente
-
-**O aluno atualizou o modelo de domínio para incorporar o novo serviço, refletindo as mudanças na arquitetura e nas dependências?**
-
-- Não demonstrou o item de rubrica
-- Demonstrou o item de rubrica
-
-**O aluno implementou novos endpoints da API REST para acesso ao microsserviço?**
-
-- Não demonstrou o item de rubrica
-- Demonstrou o item de rubrica
-
-**O aluno usou Spring Boot para o desenvolvimento do microsserviço?**
-
-- Não demonstrou o item de rubrica
-- Demonstrou o item de rubrica
-
-**O aluno aplicou Spring Cloud para facilitar a configuração e a comunicação distribuídas?**
-
-- Não demonstrou o item de rubrica
-- Demonstrou o item de rubrica
-
-**O aluno criou repositórios dedicados para gerenciar os dados específicos do microsserviço?**
-
-- Não demonstrou o item de rubrica
-- Demonstrou o item de rubrica
-
-**O aluno adicionou componentes na interface do usuário para interação com o novo microsserviço?**
-
-- Não demonstrou o item de rubrica
-- Demonstrou o item de rubrica
-
-**O aluno expandiu a cobertura de testes para incluir o novo microsserviço e as atualizações no sistema?**
-
-- Não demonstrou o item de rubrica
-- Demonstrou o item de rubrica
-
-**O aluno demonstrou separação de responsabilidades entre o monólito e o microsserviço?**
-
-- Não demonstrou o item de rubrica
-- Demonstrou o item de rubrica
-
-**O aluno implementou a comunicação entre os serviços de forma eficaz?**
-
-- Não demonstrou o item de rubrica
-- Demonstrou o item de rubrica
-
-**O aluno atualizou o repositório Git com o microsserviço e as alterações correspondentes no sistema e na interface?**
-
-- Não demonstrou o item de rubrica
-- Demonstrou o item de rubrica
-
-**O aluno documentou a arquitetura do microsserviço e a sua integração com o sistema?**
-
-- Não demonstrou o item de rubrica
-- Demonstrou o item de rubrica
-
-**O aluno descreveu os novos endpoints da API na documentação?**
-
-- Não demonstrou o item de rubrica
-- Demonstrou o item de rubrica
-
-**O aluno apresentou uma demonstração prática da operação integrada do novo microsserviço?**
-
-- Não demonstrou o item de rubrica
-- Demonstrou o item de rubrica
+| Avaliação de arquitetura orientada a eventos | prós, contras, quando vale e quando não vale, e o critério aplicado interação por interação, em [docs/EVENTOS.md](docs/EVENTOS.md) (seções "prós e contras" e "o critério usado aqui") |
+| Padrões de mensagens | quatro padrões de mensagem — notificação de evento (`post.deleted`), comando ponto a ponto com consumidores concorrentes (`comment.register`), transferência de estado pelo evento (`comment.*`, `reaction.*`, `engagement.*`) e pedido assíncrono de republicação (`engagement.snapshot.request`) — e três de confiabilidade: outbox transacional, consumidor idempotente, retentativa com dead letter e alternate exchange. catálogo e formato em [docs/EVENTOS.md](docs/EVENTOS.md) |
+| Implementação com RabbitMQ | topologia com exchanges topic, direct e fanout, filas duráveis, dead letter exchange, alternate exchange e publisher confirms, declarada em [MessagingConfig do monólito](backend/src/main/java/com/blog/shared/messaging/MessagingConfig.java) e [do microsserviço](engagement-service/src/main/java/com/blog/engagement/messaging/MessagingConfig.java); broker em [docker-compose.yml](docker-compose.yml) |
+| Simplificação com Spring Boot | `spring-boot-starter-amqp`, `@RabbitListener`, `Declarables`/`RabbitAdmin`, retentativa por propriedade com `RabbitRetryTemplateCustomizer`, `RabbitTemplateCustomizer`, confirmações por propriedade, `@TransactionalEventListener` e `@ServiceConnection` nos testes; tabela em [docs/EVENTOS.md](docs/EVENTOS.md) (seção "o que o spring boot simplificou") |
+| Refatoração do sistema | o comentário virou comando em fila ([CommentService](backend/src/main/java/com/blog/engagement/service/CommentService.java), [CommentCommandListener](engagement-service/src/main/java/com/blog/engagement/messaging/CommentCommandListener.java)); a limpeza de post apagado virou evento via outbox ([PostEventsOutbox](backend/src/main/java/com/blog/authoring/messaging/PostEventsOutbox.java), [OutboxRelay](backend/src/main/java/com/blog/shared/messaging/outbox/OutboxRelay.java), [PostDeletedListener](engagement-service/src/main/java/com/blog/engagement/messaging/PostDeletedListener.java)); os contadores da estante vêm de uma projeção alimentada por eventos ([EngagementSnapshotListener](backend/src/main/java/com/blog/engagement/messaging/EngagementSnapshotListener.java), [EngagementEventPublisher](engagement-service/src/main/java/com/blog/engagement/messaging/EngagementEventPublisher.java)). o efeito em escalabilidade, resiliência e transações está em [docs/EVENTOS.md](docs/EVENTOS.md) (seção "o que melhorou") |
+| Código fonte | este repositório; a interface acompanhou a mudança em [PostPage.jsx](frontend/src/pages/PostPage.jsx) (recado "na fila"), [HomePage.jsx](frontend/src/pages/HomePage.jsx) (contadores) e [ServiceBadge.jsx](frontend/src/components/ServiceBadge.jsx) (selo da fila) |
+| Documentação com diagramas de arquitetura e fluxos de eventos | [docs/EVENTOS.md](docs/EVENTOS.md): diagrama da topologia, três diagramas de sequência dos fluxos de eventos, catálogo de mensagens e tabela de falhas; visão geral atualizada em [docs/ARQUITETURA.md](docs/ARQUITETURA.md) |
+| Testes | 133 testes nos quatro serviços (eram 93), incluindo integração com um RabbitMQ real em container (Testcontainers); estratégia em [docs/EVENTOS.md](docs/EVENTOS.md) |
+| Demonstração em cenários simulados | [subir.sh](subir.sh) sobe o broker e a stack em um comando; o roteiro em [docs/EVENTOS.md](docs/EVENTOS.md) simula a queda do microsserviço, a queda do broker, a mensagem venenosa, o evento sem assinante e duas instâncias dividindo a fila |
 
 ---
 
 ## Entregas anteriores
+
+### Terceira Entrega: Criação de um Microsserviço
+
+Expandir a aplicação monolítica introduzindo um microsserviço com Spring Boot e Spring Cloud, integrado de forma eficaz ao sistema maior. As subcompetências cobriam a atualização do modelo de domínio, novos endpoints REST, a implementação do microsserviço com Spring Boot e Spring Cloud (configuração e comunicação distribuídas), repositórios dedicados, componentes de front-end e a expansão dos testes.
+
+O resultado está documentado em [docs/MICROSSERVICO.md](docs/MICROSSERVICO.md).
 
 ### Segunda Entrega: Desenvolver uma Camada de Persistência Real
 

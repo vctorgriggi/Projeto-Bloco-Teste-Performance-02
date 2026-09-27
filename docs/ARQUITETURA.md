@@ -2,7 +2,7 @@
 
 este documento explica como o blog foi construído. a ideia aqui é registrar as decisões e mostrar como o código está organizado de verdade, não uma versão idealizada.
 
-a solução cresceu em três etapas, e o documento acompanha essa ordem. a primeira entrega montou uma base em camadas e bounded contexts, dentro de um único processo. a segunda amadureceu a camada de persistência e adicionou histórico de dados — detalhado no final deste documento e, com profundidade, em [PERSISTENCIA.md](PERSISTENCIA.md). a terceira partiu o sistema: um dos contextos saiu do monólito e virou um microsserviço com processo, banco e deploy próprios, e os dois passaram a conversar por rede. o que mudou está resumido no final e detalhado em [MICROSSERVICO.md](MICROSSERVICO.md).
+a solução cresceu em quatro etapas, e o documento acompanha essa ordem. a primeira entrega montou uma base em camadas e bounded contexts, dentro de um único processo. a segunda amadureceu a camada de persistência e adicionou histórico de dados — detalhado no final deste documento e, com profundidade, em [PERSISTENCIA.md](PERSISTENCIA.md). a terceira partiu o sistema: um dos contextos saiu do monólito e virou um microsserviço com processo, banco e deploy próprios, e os dois passaram a conversar por rede — detalhado em [MICROSSERVICO.md](MICROSSERVICO.md). a quarta tornou essa conversa orientada a eventos: onde quem chama não precisa da resposta para seguir, a chamada HTTP deu lugar a comandos e eventos num broker de mensagens (RabbitMQ). o que mudou está resumido no final e detalhado em [EVENTOS.md](EVENTOS.md).
 
 o monólito descrito abaixo continua existindo e continua sendo o coração do sistema — ele guarda posts e autores e é a porta de entrada da API. o que ele deixou de ser é o único processo.
 
@@ -10,15 +10,16 @@ o monólito descrito abaixo continua existindo e continua sendo o coração do s
 
 a aplicação é um blog simples. autores escrevem posts, posts começam como rascunho e podem ser publicados, leitores deixam comentários e reagem aos posts. são quatro entidades no total: autor, post, comentário e reação — esta última nasceu na terceira entrega, já dentro do microsserviço.
 
-o sistema tem cinco peças que rodam separadas:
+o sistema tem seis peças que rodam separadas:
 
 - **`backend` (blog-api, porta 8080)** — o monólito Spring Boot: posts, autores, e a API que o navegador consome
 - **`engagement-service` (porta 8081)** — o microsserviço Spring Boot: comentários e reações
 - **`discovery-server` (porta 8761)** — o registro de serviços (Eureka), por onde os dois se encontram
 - **`config-server` (porta 8888)** — a configuração central dos dois serviços de negócio
+- **RabbitMQ (porta 5672, painel na 15672)** — o broker de mensagens, por onde passam os comandos e os eventos entre os dois serviços
 - **`frontend` (porta 5173)** — a aplicação React (Vite), que fala apenas com o monólito
 
-os dois do meio são infraestrutura: não têm domínio nem banco. existem porque, com mais de um processo, aparecem duas perguntas que um monólito nunca precisou fazer — *onde está o outro serviço?* e *de onde vêm as propriedades dele?*
+o registro, o config server e o broker são infraestrutura: não têm domínio nem banco. existem porque, com mais de um processo, aparecem perguntas que um monólito nunca precisou fazer — *onde está o outro serviço?*, *de onde vêm as propriedades dele?* e, desde a quarta entrega, *como avisar o outro serviço de algo sem depender de ele estar no ar agora?*
 
 cada serviço tem o seu próprio H2 em memória: `blogdb` no monólito, `engagementdb` no microsserviço. um banco por serviço é o que torna a separação real, e não apenas de código — não existe junção possível entre `posts` e `comments`. os bancos zeram a cada restart, o que é proposital: queremos algo que rode sem instalar nada. trocar por um banco real é mexer no `application.yml` de cada serviço, porque o acesso a dados passa todo pela camada de repositório.
 
@@ -46,6 +47,12 @@ controller  ->  service  ->  cliente HTTP  -->|rede|-->  microsserviço  ->  ban
 
 o serviço de comentário, no monólito, deixou de gravar dado e passou a compor: valida o que é da sua alçada (o post existe?) e delega o resto a quem é dono. o desaparecimento do `@Transactional` nesse service é o sinal mais claro dessa mudança — não há mais transação local para abrir, e abrir uma seria pior do que inútil, porque manteria uma conexão do pool presa enquanto a chamada de rede espera resposta.
 
+na quarta entrega a escrita desse service ganhou um terceiro formato. ler continua sendo o caminho acima; enviar um comentário não espera mais o outro lado — vira um comando numa fila, e a resposta ao leitor é "aceito":
+
+```
+controller  ->  service  ->  remetente do comando  -->|broker|-->  fila  -->  consumidor (microsserviço)  ->  banco
+```
+
 ## bounded contexts
 
 em vez de jogar as entidades juntas, separei o domínio em dois contextos, seguindo a ideia de bounded context do DDD:
@@ -63,28 +70,39 @@ com.blog                                  (backend / blog-api)
 │   ├── domain        (Author, Post, PostStatus)
 │   ├── repository    (AuthorRepository, PostRepository)
 │   ├── service       (AuthorService, PostService, PostHistoryService, AuthorHistoryService, PostCatalogAdapter)
-│   └── web           (AuthorController, PostController, dto)
+│   ├── web           (AuthorController, PostController, dto)
+│   └── messaging     (PostEventsOutbox, PostDeletedMessage)          <- quarta entrega
 ├── engagement                            <- agora um contexto CLIENTE
 │   ├── client        (EngagementClient, EngagementErrorDecoder, EngagementFallbackFactory, dto)
-│   ├── service       (PostCatalog, CommentService, ReactionService, EngagementStatusService,
-│   │                  EngagementCleanupListener)
-│   └── web           (CommentController, ReactionController, EngagementStatusController, dto)
+│   ├── service       (PostCatalog, CommentService, ReactionService, EngagementStatusService)
+│   ├── messaging     (CommentCommandSender, SnapshotRequestOnStartup,
+│   │                  EngagementSnapshotListener, mensagens)            <- quarta entrega
+│   ├── projection    (EngagementCounter, EngagementCountersService)    <- quarta entrega
+│   └── web           (CommentController, ReactionController, EngagementStatusController,
+│                      EngagementCountersController, dto)
 └── shared
     ├── config        (CorsConfig, DataSeeder, PersistenceConfig)
     ├── event         (PostDeletedEvent)
-    ├── exception     (ResourceNotFoundException, BusinessRuleException,
-    │                  ServiceUnavailableException, InvalidRequestException)
+    ├── exception     (ResourceNotFoundException, BusinessRuleException, ServiceUnavailableException,
+    │                  InvalidRequestException, InvalidMessageException)
+    ├── messaging     (Topology, MessagingConfig, ConfirmedPublisher, BrokerHealth)
+    │   └── outbox    (OutboxMessage, OutboxRepository, OutboxWriter, OutboxRelay, OutboxRelayScheduler)
     └── web           (GlobalExceptionHandler, ApiError)
 
 com.blog.engagement                       (engagement-service)
 ├── domain            (Comment, Reaction, ReactionType)
-├── repository        (CommentRepository, ReactionRepository, ReactionCount)
-├── service           (CommentService, ReactionService, EngagementCleanupService)
+├── repository        (CommentRepository, ReactionRepository, ReactionCount, PostTotal)
+├── service           (CommentService, ReactionService, EngagementCleanupService,
+│                      EngagementChanges, EngagementChanged)
+├── messaging         (Topology, MessagingConfig, CommentCommandListener, PostDeletedListener,
+│                      SnapshotRequestListener, EngagementEventPublisher, MessagingStartup, mensagens)
 ├── web               (CommentController, ReactionController, PostEngagementController,
 │                      EngagementPingController, dto)
 ├── config            (DataSeeder)
 └── shared            (ApiError, GlobalExceptionHandler, exceções)
 ```
+
+o pacote `messaging` é, em cada serviço, o equivalente do `web` para mensagens: os listeners são finos como controllers — conferem o formato da mensagem, traduzem para a chamada do service e deixam a regra lá. os services não falam com o RabbitMQ; eles anunciam o que aconteceu (com eventos de domínio em processo), e é a camada de mensageria que transforma isso em mensagem. a regra não sabe por onde o dado sai, como já não sabia antes.
 
 o ponto importante sempre foi como os dois contextos se falam sem ficarem grudados. um comentário precisa saber se o post existe antes de ser salvo, mas o engajamento não enxerga a entidade `Post` nem o repositório de authoring. em vez disso, o engajamento define uma interface chamada `PostCatalog` com um único método: "esse post existe?". quem implementa essa interface é o `PostCatalogAdapter`, que mora no lado de authoring e usa o `PostRepository` por baixo.
 
@@ -113,21 +131,29 @@ flowchart TD
         end
 
         subgraph EngCli["contexto Engagement (cliente)"]
-            EC["Controllers<br/>(comentário, reação, status)"]
+            EC["Controllers<br/>(comentário, reação, status, contadores)"]
             ES["Services"]
             ECL["EngagementClient<br/>(Feign + circuit breaker)"]
+            EMQ["Mensageria<br/>(comando, contadores)"]
             EC --> ES --> ECL
+            ES --> EMQ
         end
+
+        OUTBOX["Outbox + relay"]
+        AS -.evento de domínio.-> OUTBOX
     end
 
     subgraph Micro["processo: engagement-service :8081"]
         MC["Controllers"]
+        ML["Listeners"]
         MS["Services"]
         MR["Repositories<br/>(Comment, Reaction)"]
         MC --> MS --> MR
+        ML --> MS
     end
 
     EUREKA[["discovery-server :8761"]]
+    MQ{{"RabbitMQ :5672"}}
     DB1[("blogdb")]
     DB2[("engagementdb")]
 
@@ -136,20 +162,27 @@ flowchart TD
     ES -.via PostCatalog.-> AR
     ECL -->|"HTTP/JSON"| MC
     ECL -.resolve o nome.-> EUREKA
+    OUTBOX -->|"post.deleted"| MQ
+    EMQ -->|"comment.register"| MQ
+    MQ -->|"comandos e eventos"| ML
+    MS -.->|"comment.* reaction.*"| MQ
+    MQ -->|"estado do engajamento"| EMQ
     AR --> DB1
     MR --> DB2
 ```
 
-duas setas merecem atenção, porque são as duas fronteiras do sistema:
+algumas setas merecem atenção, porque são as fronteiras do sistema:
 
 - a tracejada **`via PostCatalog`** é onde os dois contextos se tocam dentro do monólito. o service de engajamento checa se o post existe através da interface que ele mesmo declara, e o lado de authoring a implementa no `PostCatalogAdapter`. é a mesma seta das entregas anteriores.
 - a cheia do **`EngagementClient` para os controllers do microsserviço** é a fronteira de processo. ela atravessa a rede, e por isso é a única que pode falhar de um jeito que nenhuma chamada local falha: pode não responder. tudo o que existe de circuit breaker, fallback e tradução de erro na terceira entrega existe por causa dessa seta.
 
-note também o que **não** aparece: nenhuma seta do front para o microsserviço, e nenhuma seta do microsserviço de volta para o monólito. a primeira ausência é a decisão de manter uma porta de entrada só; a segunda é a de manter a dependência de mão única.
+- as que passam pelo **RabbitMQ** são a fronteira nova da quarta entrega. nenhuma delas é uma chamada: quem publica não espera quem consome, e nem sabe quem é. é por isso que elas podem ir nos dois sentidos sem criar um ciclo.
+
+note também o que **não** aparece: nenhuma seta do front para o microsserviço, e nenhuma seta **síncrona** do microsserviço de volta para o monólito. a primeira ausência é a decisão de manter uma porta de entrada só; a segunda é a de manter a dependência de mão única. a informação agora corre também do engajamento para o monólito — os contadores —, mas por eventos: o engajamento publica no exchange dele sem saber que o monólito existe, e continua funcionando se o monólito cair. a dependência de disponibilidade continua de mão única.
 
 ## diagrama de sequência
 
-este é o fluxo de adicionar um comentário a um post — o mesmo que as entregas anteriores documentavam, agora atravessando dois processos. escolhi mantê-lo justamente para que a comparação seja possível: o começo e o fim são idênticos, e o meio mudou de natureza.
+este é o fluxo de adicionar um comentário a um post — o mesmo que as entregas anteriores documentavam. escolhi mantê-lo justamente para que a comparação seja possível entre as quatro entregas: na primeira e na segunda ele terminava num repositório local; na terceira atravessava a rede numa chamada HTTP; na quarta, ele se partiu em dois tempos. o começo continua idêntico — inclusive a validação do post antes de qualquer coisa sair da máquina —, e a resposta ao leitor passou a ser "aceito", e não "gravado".
 
 ```mermaid
 sequenceDiagram
@@ -159,8 +192,9 @@ sequenceDiagram
     participant CS as CommentService
     participant PCAT as PostCatalog (adapter)
     participant PR as PostRepository
-    participant CLI as EngagementClient
-    participant MS as engagement-service
+    participant SND as CommentCommandSender
+    participant MQ as RabbitMQ
+    participant CCL as CommentCommandListener
     participant DB2 as engagementdb
 
     Leitor->>Front: preenche nome e recado, envia
@@ -171,24 +205,27 @@ sequenceDiagram
     PCAT->>PR: existsById(1)
     PR-->>PCAT: true
     PCAT-->>CS: true
-    CS->>CLI: addComment(1, NewComment)
-    Note over CLI: circuit breaker fechado:<br/>a chamada segue
-    CLI->>MS: POST /api/posts/1/comments
-    MS->>DB2: INSERT
-    DB2-->>MS: salvo
-    MS-->>CLI: 201 + CommentView
-    CLI-->>CS: CommentView
-    CS-->>CC: CommentView
-    CC-->>Front: 201 Created + CommentResponse
-    Front->>Front: recarrega a lista de comentários
+    CS->>SND: send(RegisterCommentCommand)
+    SND->>MQ: comment.register
+    MQ-->>SND: confirmado
+    CC-->>Front: 202 Accepted + submissionId
+    Front->>Front: mostra o recado "na fila"
+
+    Note over MQ,CCL: agora, ou quando o<br/>engajamento voltar
+    MQ->>CCL: comment.register
+    CCL->>DB2: INSERT (se o submissionId for novo)
+    Front->>CC: GET /api/posts/1/comments
+    CC-->>Front: lista, com o submissionId
+    Front->>Front: troca "na fila" pelo comentário
 ```
 
-os dois caminhos de erro, e a diferença entre eles, são o que este diagrama existe para mostrar:
+os caminhos de erro, e a diferença entre eles, são o que este diagrama existe para mostrar:
 
-- **o post não existe.** o `CommentService` lança `ResourceNotFoundException` antes de chamar o cliente, o handler global traduz para 404 e nada sai da máquina. é o mesmo comportamento de antes.
-- **o microsserviço não responde.** o fallback do cliente lança `ServiceUnavailableException` e o handler traduz para **503**. esse caminho não existia antes da terceira entrega, porque antes não havia como o comentário estar indisponível enquanto o resto do sistema funciona.
+- **o post não existe.** o `CommentService` lança `ResourceNotFoundException` antes de enviar o comando, o handler global traduz para 404 e nada sai da máquina. é o mesmo comportamento das quatro entregas.
+- **o microsserviço não responde.** na terceira entrega, isso era um 503 e o formulário saía da tela. na quarta, **não é erro**: o comando espera na fila e o leitor recebe 202. o recado aparece quando o engajamento voltar.
+- **o broker não responde.** é o caminho novo: o remetente não recebe a confirmação, lança `ServiceUnavailableException`, e o handler traduz para **503**. o texto continua no formulário do leitor — nada foi aceito para depois se perder.
 
-o segundo caso é o que o front trata mostrando o post normalmente e avisando só na seção da conversa. os detalhes estão em [MICROSSERVICO.md](MICROSSERVICO.md).
+os detalhes da integração por HTTP estão em [MICROSSERVICO.md](MICROSSERVICO.md), e os do comando, das filas e da dead letter, em [EVENTOS.md](EVENTOS.md).
 
 ## como o front conversa com o back
 
@@ -199,6 +236,8 @@ como front e back rodam em portas diferentes, o navegador trata como origens dis
 com a chegada do microsserviço, isso **não** mudou, e a decisão é deliberada: o navegador continua falando com uma origem só. o front não conhece o `engagement-service`, não faz descoberta de serviço e não tem uma segunda base url — comentários e reações são alcançados através do monólito, que fala com o outro processo por dentro. em troca, o monólito ganhou rotas espelho para as reações. o balanço dessa escolha, e o API Gateway que seria a resposta certa em um sistema maior, estão discutidos em [MICROSSERVICO.md](MICROSSERVICO.md).
 
 o que o front ganhou de novo foi um componente que só faz sentido em arquitetura distribuída: um selo no cabeçalho que diz se a conversa e as reações estão disponíveis agora. um pedaço do sistema pode cair sozinho, e o leitor merece saber disso antes de escrever um comentário e receber erro.
+
+a quarta entrega trouxe para o front a consistência eventual, e ela ficou visível de propósito. o comentário enviado aparece na hora com a etiqueta "na fila", e vira comentário quando o engajamento o grava — a página reconsulta a conversa enquanto houver recado pendente. o formulário não some mais com o engajamento fora, porque o recado agora tem onde esperar. o selo virou dois: "conversa" (o microsserviço) e "fila" (o broker), porque são perguntas diferentes. e a estante mostra os totais de conversa e reações de cada post, vindos da cópia local que o monólito mantém pelos eventos, numa chamada só.
 
 ## tratamento de erros
 
@@ -215,6 +254,8 @@ em vez de espalhar try/catch pelos controllers, o tratamento fica num lugar só:
 isso mantém os controllers limpos e garante que a API responde erro sempre do mesmo jeito. os dois mapeamentos de 409 ligados à persistência entraram na segunda entrega, junto com o `@Version`, para que um conflito de concorrência não escape como 500.
 
 os dois últimos entraram na terceira, e existem pelo mesmo motivo um do outro: erro que atravessa a fronteira de rede precisa continuar significando a mesma coisa. o 503 diz "a requisição estava certa, o sistema é que está com uma peça faltando, tente mais tarde" — sem ele, uma queda do engajamento apareceria como 500 e o front não teria como distinguir de um bug. o 400 repassa a recusa de quem é dono da regra, em vez de transformar erro do cliente em erro do servidor. o microsserviço tem um handler equivalente, com o mesmo envelope de resposta, e é essa simetria que permite ao monólito ler a mensagem original e mostrá-la ao leitor.
+
+a quarta entrega trouxe um lugar novo onde erros acontecem, e ele não tem HTTP: o consumidor de uma fila. não há a quem responder 400, então o equivalente é outro. a `InvalidMessageException` é o "400 das mensagens": o problema está na mensagem, tentar de novo daria o mesmo resultado, e ela vai direto para a dead letter da fila, sem retentativa. uma falha passageira (banco ocupado, conflito de concorrência) é retentada três vezes com espera exponencial antes de ir para o mesmo lugar. em nenhum dos dois casos a mensagem se perde ou volta para a fila em loop.
 
 ## camada de persistência e histórico
 
@@ -265,6 +306,19 @@ e as decisões que a distribuição obrigou a tomar:
 
 o detalhamento de tudo isso — topologia, configuração, formatos, testes e o que ficou de fora — está em [MICROSSERVICO.md](MICROSSERVICO.md).
 
+## a quarta entrega: eventos
+
+a terceira entrega deixou quatro pontos em que um serviço dependia de o outro estar no ar sem precisar: o comentário (o formulário sumia com o engajamento fora), a limpeza de post apagado (por HTTP e melhor esforço, que deixava conversa órfã para sempre), a estante (que não mostrava engajamento, porque isso custaria uma chamada por post) e o próprio conhecimento que o monólito tinha de um endpoint de limpeza do outro lado. a quarta entrega trocou esses pontos por mensagens num RabbitMQ, e deixou em HTTP tudo o que precisa de resposta na hora.
+
+o critério foi uma pergunta só — *quem chama precisa da resposta para seguir?* — e o resultado é um sistema híbrido, de propósito:
+
+- **ler a conversa, reagir, apagar comentário** continuam HTTP pelo Feign, com o circuit breaker e a tradução de erro da terceira entrega;
+- **enviar um comentário** virou um *comando* na fila do engajamento. o monólito valida o post, envia, espera a confirmação do broker e responde 202; o engajamento grava quando puder, de forma idempotente pelo `submissionId`;
+- **o post apagado** virou um *evento* gravado no **outbox**, na mesma transação da exclusão, e publicado por um relay que só marca a mensagem como enviada depois da confirmação do broker. o `PostService` não mudou: continua publicando o mesmo evento de domínio interno, e só quem escuta foi trocado — como o comentário do `PostDeletedEvent` previa;
+- **os contadores da estante** vêm de uma cópia local no monólito, mantida pelos eventos que o engajamento publica a cada mudança, carregando os totais (e não o delta), aplicados pela regra "o mais recente vence".
+
+a topologia é declarada pelos próprios serviços: exchanges topic para eventos, direct para comandos, um alternate exchange para eventos sem assinante e uma dead letter para cada fila. os padrões, os diagramas de fluxo, o que acontece quando cada peça cai, três defeitos que só apareceram com a stack no ar e o roteiro de demonstração estão em [EVENTOS.md](EVENTOS.md).
+
 ## resumo das decisões
 
 - começou monólito, mas já dividido por contexto e camada, pensando na evolução pra microsserviços — e a evolução aconteceu exatamente na linha desenhada
@@ -276,3 +330,7 @@ o detalhamento de tudo isso — topologia, configuração, formatos, testes e o 
 - regras de negócio dentro do service e do domínio do serviço que é dono delas, nunca no controller e nunca duplicadas do outro lado da fronteira
 - tratamento de erro e formato de resposta centralizados, e o mesmo envelope nos dois serviços
 - descoberta de serviços em vez de endereço fixo; configuração central em vez de propriedade duplicada; circuit breaker em vez de esperar timeout; evento de domínio em vez de chamada direta entre contextos
+- mensagem no lugar de chamada síncrona **só onde quem chama não precisa da resposta** — comando para o comentário, evento para o post apagado, eventos de estado para os contadores — e HTTP onde precisa
+- outbox transacional para o fato que não pode se perder; confirmação do broker para o comando que não tem escrita local; melhor esforço para o dado derivado que se corrige sozinho — nem toda mensagem merece a mesma garantia
+- consumidores idempotentes, cada um com a estratégia que o seu dado permite, porque o broker entrega pelo menos uma vez
+- o contrato entre os serviços é o JSON da mensagem, e não uma classe compartilhada; a topologia é repetida em cada serviço, e uma divergência impede o serviço de subir

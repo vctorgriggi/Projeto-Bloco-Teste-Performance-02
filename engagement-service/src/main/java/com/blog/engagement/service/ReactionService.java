@@ -24,9 +24,11 @@ import java.util.Map;
 public class ReactionService {
 
     private final ReactionRepository reactionRepository;
+    private final EngagementChanges engagementChanges;
 
-    public ReactionService(ReactionRepository reactionRepository) {
+    public ReactionService(ReactionRepository reactionRepository, EngagementChanges engagementChanges) {
         this.reactionRepository = reactionRepository;
+        this.engagementChanges = engagementChanges;
     }
 
     public ReactionSummaryResponse react(Long postId, ReactionRequest request) {
@@ -35,6 +37,7 @@ public class ReactionService {
                     "O leitor " + request.readerName() + " ja reagiu com " + request.type() + " neste post");
         }
         reactionRepository.save(new Reaction(postId, request.readerName(), request.type()));
+        engagementChanges.announce(EngagementChanged.REACTION_ADDED, postId);
         return summaryFor(postId, request.readerName());
     }
 
@@ -44,6 +47,7 @@ public class ReactionService {
                 .orElseThrow(() -> new ResourceNotFoundException(
                         "O leitor " + readerName + " nao tem reacao " + type + " no post " + postId));
         reactionRepository.delete(reaction);
+        engagementChanges.announce(EngagementChanged.REACTION_REMOVED, postId);
         return summaryFor(postId, readerName);
     }
 

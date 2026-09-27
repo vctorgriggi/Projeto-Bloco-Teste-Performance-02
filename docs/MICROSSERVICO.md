@@ -2,6 +2,14 @@
 
 este documento detalha a terceira entrega: a extração de um microsserviço a partir do monólito, a comunicação distribuída entre os dois e a capacidade nova que nasceu do outro lado da fronteira. a arquitetura geral continua descrita em [ARQUITETURA.md](ARQUITETURA.md) e a camada de persistência em [PERSISTENCIA.md](PERSISTENCIA.md); o que segue é o recorte do sistema distribuído.
 
+> **o que mudou na quarta entrega.** a arquitetura orientada a eventos, detalhada em [EVENTOS.md](EVENTOS.md), trocou por mensagens no RabbitMQ as interações em que o monólito não precisava da resposta para seguir. três coisas descritas abaixo mudaram por isso, e estão marcadas no ponto em que aparecem:
+>
+> - **enviar um comentário** deixou de ser uma chamada HTTP: virou um comando na fila do engajamento, e o `POST` responde 202. o `addComment` saiu do `EngagementClient`.
+> - **a limpeza de post apagado** deixou de ser o `EngagementCleanupListener` chamando o microsserviço por HTTP: virou um evento gravado no outbox e publicado no broker. o `purgePost` saiu do `EngagementClient`, e a rota `DELETE /api/posts/{postId}/engagement` continua no microsserviço só como ferramenta de operação.
+> - **com o engajamento fora do ar, o formulário de comentário não sai mais da tela**: o recado espera na fila.
+>
+> todo o resto — descoberta, Feign, circuit breaker, tradução de erro, configuração central, as leituras e as reações — continua exatamente como está descrito aqui. a fronteira HTTP encolheu para o que precisa de resposta na hora.
+
 ## a decisão de partida
 
 a primeira entrega já registrou, sobre a ponte entre os dois bounded contexts, que "se um dia esses contextos virarem serviços separados, esse adaptador é o ponto que vira uma chamada de rede". esta entrega cobra essa promessa.
@@ -235,7 +243,7 @@ com.blog.engagement
 │   ├── CommentService             valida o post e delega
 │   ├── ReactionService            valida o post e delega
 │   ├── EngagementStatusService    diagnóstico da integração
-│   └── EngagementCleanupListener  reage a post apagado
+│   └── EngagementCleanupListener  reage a post apagado (removido na quarta entrega: virou outbox)
 └── web
     ├── CommentController          rotas idênticas às de antes
     ├── ReactionController         rotas novas
@@ -293,7 +301,7 @@ os de comentário são **os mesmos de antes da migração** — mesmos caminhos,
 | método | rota | o que faz | novo? |
 | --- | --- | --- | --- |
 | GET | `/api/posts/{postId}/comments` | lista os comentários de um post | não |
-| POST | `/api/posts/{postId}/comments` | adiciona um comentário | não |
+| POST | `/api/posts/{postId}/comments` | adiciona um comentário (desde a quarta entrega: 202, via fila) | não |
 | DELETE | `/api/comments/{commentId}` | remove um comentário | não |
 | GET | `/api/posts/{postId}/reactions?reader={nome}` | resumo de reações; `reader` é opcional | **sim** |
 | POST | `/api/posts/{postId}/reactions` | registra uma reação | **sim** |
@@ -478,6 +486,8 @@ quatro decisões nesse trecho:
 
 a consistência aqui é **eventual**, e há uma janela em que o engajamento de um post apagado ainda existe. o caminho para fechar essa janela é uma mensagem persistente (padrão outbox + broker) que possa ser reentregue até ser confirmada. está fora do escopo desta entrega, mas o ponto onde ela entraria é exatamente este listener.
 
+> **na quarta entrega, foi o que aconteceu, e no ponto previsto.** o `EngagementCleanupListener` saiu, e no lugar dele entrou o `PostEventsOutbox`, que escuta o mesmo `PostDeletedEvent` e grava a mensagem no outbox na mesma transação da exclusão. um relay a publica no RabbitMQ, e o engajamento a consome pela fila `engagement.post-deleted`. o `PostService` não mudou. das quatro decisões acima, três continuaram valendo (evento em vez de chamada, nada antes do commit, operação idempotente); a quarta, "melhor esforço", foi a que o broker substituiu — a mensagem agora espera o engajamento voltar, em vez de a falha ir para o log. detalhes em [EVENTOS.md](EVENTOS.md).
+
 ### os dados de exemplo
 
 o seeder do microsserviço cria comentários para os posts 1 e 2 — os mesmos ids que o seeder do monólito gera. é um acerto combinado entre dois bancos em memória que sobem vazios e geram ids em sequência. funciona para dado de exemplo, e mostra bem o custo de não ter integridade referencial entre serviços: quem garante a coerência deixa de ser o banco e passa a ser o fluxo da aplicação.
@@ -515,9 +525,11 @@ function load() {
 
 com o engajamento fora do ar, o resultado é: o texto do post continua legível, a barra de reações mostra o aviso com os botões desabilitados, a seção de conversa explica o que aconteceu e o formulário de comentário **sai da tela** — sem serviço não há onde gravar o recado, e aceitar um texto que vai se perder é pior do que não oferecer o campo.
 
+> na quarta entrega o formulário passou a ficar: o recado agora tem onde esperar (a fila), então aceitá-lo deixou de ser aceitar um texto que vai se perder. o raciocínio acima continua certo; o que mudou foi a premissa.
+
 ## testes
 
-são 93 testes automatizados, distribuídos pelos quatro serviços.
+são 93 testes automatizados, distribuídos pelos quatro serviços. (a quarta entrega levou a suíte a 133; o que ela acrescentou está em [EVENTOS.md](EVENTOS.md).)
 
 | onde | quantos | o que cobre |
 | --- | --- | --- |
@@ -655,6 +667,8 @@ apague um post que tenha conversa. o log do monólito registra a limpeza no outr
 engajamento do post 2 limpo: 2 comentario(s) e 2 reacao(oes)
 ```
 
+> desde a quarta entrega a limpeza vai por evento, e o log mudou de lugar: o monólito registra `outbox: post.deleted publicado`, e o engajamento, `post 2 apagado no monolito: ... removidos aqui`. o roteiro atualizado, que derruba o engajamento e o broker no meio, está em [EVENTOS.md](EVENTOS.md).
+
 para encerrar tudo: `./derrubar.sh`. ele mata pelas portas em escuta, e não só pelos pids anotados — o `spring-boot:run` forka uma JVM filha, e matar apenas o processo do Maven deixaria o serviço de pé com a porta ocupada, fazendo a subida seguinte falhar sem explicação óbvia.
 
 ## o que ficou de fora, e por quê
@@ -663,9 +677,9 @@ lista honesta do que um sistema distribuído de verdade teria e este não tem:
 
 - **API Gateway** (Spring Cloud Gateway) — o monólito faz esse papel na mão. com dois serviços de negócio, o processo extra não se paga; o lugar onde ele entraria é o `ReactionController` do monólito.
 - **propagação de configuração sem restart** (`@RefreshScope` + `/actuator/refresh`) — hoje o serviço adota um valor novo no próximo startup. fazê-lo em tempo de execução exigiria decidir, propriedade por propriedade, o que é seguro trocar com o serviço no ar.
-- **mensageria e padrão outbox** — a limpeza de post apagado é uma chamada síncrona por melhor esforço. um broker daria reentrega e fecharia a janela de inconsistência.
+- **mensageria e padrão outbox** — a limpeza de post apagado é uma chamada síncrona por melhor esforço. um broker daria reentrega e fecharia a janela de inconsistência. *(feito na quarta entrega: [EVENTOS.md](EVENTOS.md).)*
 - **rastreamento distribuído** (Micrometer Tracing / Zipkin) — hoje, seguir uma requisição pelos dois serviços exige cruzar dois logs na mão.
 - **autenticação entre serviços** — as rotas de integração do microsserviço estão abertas. em produção estariam na rede interna ou atrás de credenciais de serviço.
-- **testes de contrato ou com containers** — a conversa real entre os processos foi verificada à mão, com o roteiro acima.
+- **testes de contrato ou com containers** — a conversa real entre os processos foi verificada à mão, com o roteiro acima. *(com containers, feito na quarta entrega para a mensageria: os `MessagingIntegrationTest` sobem um RabbitMQ real com Testcontainers.)*
 
 nenhum desses é difícil de acrescentar sobre o que existe, e é isso que a estrutura atual deveria garantir: o gateway entra na frente, o broker entra no listener, o tracing entra por dependência. o que essa entrega procurou fazer bem foi a fronteira — porque é ela que, feita errado, torna todo o resto caro.

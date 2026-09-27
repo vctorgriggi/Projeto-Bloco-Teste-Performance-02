@@ -1,12 +1,18 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api.js'
 
-// selo de disponibilidade do microsservico de engajamento.
+// selos de disponibilidade das duas pecas externas de que a conversa depende.
 //
-// existe por causa da arquitetura distribuida: um pedaco do sistema pode estar fora do
+// existem por causa da arquitetura distribuida: um pedaco do sistema pode estar fora do
 // ar enquanto o resto funciona, e isso e uma informacao que o leitor merece ter antes
-// de escrever um comentario e receber um erro. o monolito responde esse diagnostico em
-// /api/engagement/status, sempre com 200 -- o "caiu" vem no corpo.
+// de agir. o monolito responde esse diagnostico em /api/engagement/status, sempre com
+// 200 -- o "caiu" vem no corpo.
+//
+// desde a quarta entrega sao dois selos, porque sao duas perguntas diferentes:
+// - "conversa": o microsservico de engajamento responde? sem ele, nao da para LER a
+//   conversa nem reagir.
+// - "fila": o broker de mensagens responde? sem ele, nao da para ENVIAR um comentario.
+// com a conversa fora e a fila de pe, comentar ainda funciona: o recado espera na fila.
 export default function ServiceBadge() {
   const [status, setStatus] = useState(null)
 
@@ -34,14 +40,28 @@ export default function ServiceBadge() {
 
   if (!status) return null
 
-  const titulo = status.available
+  const tituloConversa = status.available
     ? `${status.service} respondendo (${status.registeredInstances} instância(s) registrada(s) na descoberta)`
     : `${status.service} não respondeu na última verificação`
 
+  // eventos esperando no outbox sao normais por alguns segundos; parados, sao o sinal
+  // de que o broker caiu e os eventos estao guardados esperando por ele
+  const pendentes = status.pendingEvents || 0
+  const tituloFila = status.brokerAvailable
+    ? `broker de mensagens respondendo${pendentes ? ` · ${pendentes} evento(s) saindo do outbox` : ''}`
+    : `broker de mensagens fora do ar${pendentes ? ` · ${pendentes} evento(s) guardado(s) no outbox esperando por ele` : ''}`
+
   return (
-    <span className={`service-badge${status.available ? '' : ' service-badge-down'}`} title={titulo}>
-      <span className="service-dot" aria-hidden="true" />
-      {status.available ? 'conversa e reações no ar' : 'conversa e reações fora do ar'}
+    <span className="service-badges">
+      <span className={`service-badge${status.available ? '' : ' service-badge-down'}`} title={tituloConversa}>
+        <span className="service-dot" aria-hidden="true" />
+        {status.available ? 'conversa no ar' : 'conversa fora do ar'}
+      </span>
+      <span className={`service-badge${status.brokerAvailable ? '' : ' service-badge-down'}`} title={tituloFila}>
+        <span className="service-dot" aria-hidden="true" />
+        {status.brokerAvailable ? 'fila no ar' : 'fila fora do ar'}
+        {pendentes > 0 && <span className="service-count">{pendentes}</span>}
+      </span>
     </span>
   )
 }

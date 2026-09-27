@@ -5,13 +5,12 @@ import com.blog.authoring.repository.PostRepository;
 import com.blog.authoring.web.dto.AuthorRequest;
 import com.blog.authoring.web.dto.PostRequest;
 import com.blog.authoring.web.dto.PostRevisionResponse;
-import com.blog.engagement.client.EngagementClient;
 import com.blog.shared.exception.ResourceNotFoundException;
+import com.blog.shared.messaging.outbox.OutboxRepository;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.test.context.ActiveProfiles;
 
 import java.util.List;
@@ -39,17 +38,19 @@ class PostHistoryServiceTest {
     @Autowired
     private PostRepository postRepository;
 
-    // apagar um post agora avisa o servico de engajamento para limpar a conversa e as
-    // reacoes daquele post. este teste e sobre historico, nao sobre integracao, entao
-    // o cliente entra dublado: sem isso o teste tentaria uma chamada http de verdade.
-    @MockBean
-    private EngagementClient engagementClient;
+    // apagar um post grava o aviso para o engajamento no outbox, na mesma transacao. a
+    // terceira entrega precisava dublar o cliente http aqui, porque a exclusao chamava a
+    // rede; desde a quarta, a exclusao nao sai da maquina, e o duble deixou de ser
+    // necessario. a limpeza do outbox e so higiene entre testes.
+    @Autowired
+    private OutboxRepository outboxRepository;
 
     @Autowired
     private AuthorRepository authorRepository;
 
     @AfterEach
     void limparBanco() {
+        outboxRepository.deleteAll();
         postRepository.deleteAll();
         authorRepository.deleteAll();
     }

@@ -41,6 +41,22 @@ spring:
       enabled: true
       path: /h2-console
 
+  # mensageria. o endereco do broker, as retentativas e o intervalo do outbox sao ajuste
+  # de ambiente e vem do config server; o que fica aqui sao as decisoes de codigo.
+  rabbitmq:
+    # confirmacao de publicacao: o broker responde se aceitou cada mensagem. o outbox e o
+    # envio do comando de comentario dependem disso para saber que a mensagem esta
+    # guardada (veja ConfirmedPublisher). desligar quebraria os dois, entao nao e ajuste.
+    publisher-confirm-type: simple
+    listener:
+      simple:
+        # uma mensagem que falhou de vez NAO volta para a fila (evita o loop de uma
+        # mensagem invalida entregue e recusada para sempre). recusada, ela vai para a
+        # dead letter declarada em cada fila.
+        default-requeue-rejected: false
+        retry:
+          enabled: true
+
 server:
   port: 8080
 
@@ -93,6 +109,9 @@ spring:
 #   app.cors.allowed-origin            -> config-server, blog-api.yml
 #   spring.cloud.openfeign.client...   -> config-server, blog-api.yml (timeouts)
 #   resilience4j.*                     -> config-server, blog-api.yml
+#   spring.rabbitmq.host/port/usuario  -> config-server, application.yml (coringa)
+#   spring.rabbitmq.listener.retry.*   -> config-server, blog-api.yml
+#   blog.messaging.* (outbox, confirm) -> config-server, blog-api.yml
 #
 # o que sobrou aqui e o que define ESTE servico: o nome, o banco, a porta e as decisoes
 # de codigo. o que saiu e o que muda entre ambientes.

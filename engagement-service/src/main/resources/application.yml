@@ -32,8 +32,44 @@ spring:
       enabled: true
       path: /h2-console
 
+  # mensageria. o endereco do broker e as politicas de retentativa sao ajuste de ambiente
+  # e vem do config server; o que fica aqui sao as decisoes de como o codigo se comporta.
+  rabbitmq:
+    listener:
+      simple:
+        # os consumidores NAO ligam sozinhos na inicializacao do contexto: quem os liga e
+        # o MessagingStartup, quando o servico termina de subir (depois do seeder). ligar
+        # antes fez este servico processar mensagens num banco ainda vazio -- o defeito
+        # esta descrito no proprio MessagingStartup.
+        auto-startup: false
+        # uma mensagem que falhou de vez NAO volta para a fila. voltar criaria um loop:
+        # a mesma mensagem invalida seria entregue, recusada e entregue de novo, para
+        # sempre, prendendo o consumidor. recusada, ela vai para a dead letter declarada
+        # em cada fila (veja MessagingConfig).
+        default-requeue-rejected: false
+        # a retentativa em si fica ligada aqui porque o contrato da dead letter depende
+        # dela; quantas vezes e com que intervalo, isso e ajuste, e esta no config server.
+        retry:
+          enabled: true
+
 server:
   port: 8081
+
+# o starter do amqp acrescenta o broker ao /actuator/health, e o eureka publica essa
+# saude no registro (eureka.client.healthcheck, no config server). juntas, as duas coisas
+# faziam o broker fora do ar derrubar este servico INTEIRO no registro: o monolito deixava
+# de acha-lo, e ler a conversa ou reagir -- chamadas http que nao passam por fila nenhuma
+# -- respondiam 503. foi encontrado derrubando o broker durante a demonstracao.
+#
+# a saude que o registro publica tem que responder "a api deste servico atende?", e o
+# broker nao faz parte dessa resposta: sem ele, o servico continua lendo e gravando no
+# proprio banco, e os eventos de melhor esforco vao para o log. a disponibilidade do
+# broker e acompanhada por quem depende dela (o diagnostico do monolito) e pelo painel do
+# rabbitmq. e decisao de codigo, e por isso fica aqui, e nao no config server.
+management:
+  health:
+    rabbit:
+      enabled: false
 
 ---
 # ---------------------------------------------------------------------------------
@@ -74,6 +110,9 @@ spring:
 #   eureka.client.healthcheck            -> config-server, engagement-service.yml
 #   eureka.instance.lease-*              -> config-server, engagement-service.yml
 #   management.endpoints / endpoint       -> config-server, engagement-service.yml
+#   spring.rabbitmq.host/port/usuario    -> config-server, application.yml (coringa)
+#   spring.rabbitmq.listener (retentativa, concorrencia, prefetch)
+#                                        -> config-server, engagement-service.yml
 #
 # repare que o endereco do eureka saiu dos DOIS servicos e virou uma linha so no coringa.
 # antes desta entrega ele estava duplicado, e duas copias de um endereco e uma delas

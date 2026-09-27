@@ -24,3 +24,18 @@ eureka:
     # registrar-se pelo ip, e nao pelo hostname, evita depender de resolucao de nome
     # na rede onde os servicos rodam
     prefer-ip-address: true
+
+# o endereco do broker segue a mesma logica do endereco do eureka: os dois servicos
+# precisam dele, e ele muda por ambiente. usuario e senha sao os padroes de uma
+# instalacao local do rabbitmq (o docker-compose.yml da raiz sobe exatamente essa); em
+# qualquer outro ambiente viriam de um cofre de segredos, e nao de um arquivo versionado.
+spring:
+  rabbitmq:
+    host: localhost
+    port: 5672
+    username: guest
+    password: guest
+    # sem broker, a tentativa de conexao deve falhar rapido. o padrao do cliente (60s)
+    # prenderia a thread de uma requisicao de reacao enquanto o evento de melhor esforco
+    # tenta sair -- a reacao seria gravada, mas a resposta demoraria um minuto.
+    connection-timeout: 2s

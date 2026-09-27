@@ -24,7 +24,7 @@ export default function App() {
           <NavLink to="/" end>posts</NavLink>
           <NavLink to="/escrever">escrever</NavLink>
           <NavLink to="/autores">autores</NavLink>
-          {/* o sistema agora tem uma peca que pode cair sozinha; o selo avisa */}
+          {/* o sistema tem pecas que podem cair sozinhas; os selos avisam */}
           <ServiceBadge />
         </nav>
         <Squiggle className="header-squiggle" />
@@ -41,7 +41,7 @@ export default function App() {
 
       <footer className="site-footer">
         <Squiggle className="footer-squiggle" />
-        <p>feito devagar, com cafe ~ projeto bloco, terceira entrega</p>
+        <p>feito devagar, com cafe ~ projeto bloco, quarta entrega</p>
       </footer>
     </div>
   )

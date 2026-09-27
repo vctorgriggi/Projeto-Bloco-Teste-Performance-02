@@ -40,9 +40,13 @@ export const api = {
   deletePost: (id) => request(`/posts/${id}`, { method: 'DELETE' }),
 
   // comentarios e reacoes sao servidos pelo microsservico de engajamento, atraves do
-  // monolito. quando ele esta fora do ar, estas chamadas respondem 503 e a mensagem
-  // de erro chega aqui como qualquer outra.
+  // monolito. quando ele esta fora do ar, as leituras respondem 503 e a mensagem de
+  // erro chega aqui como qualquer outra.
   listComments: (postId) => request(`/posts/${postId}/comments`),
+  // enviar um comentario nao espera o engajamento: o monolito poe um comando na fila e
+  // responde 202 com o envio pendente ({ submissionId, status: 'PENDING', ... }). o
+  // comentario aparece na listagem quando o engajamento processar a mensagem, com o
+  // mesmo submissionId. 503 aqui significa que o broker, e nao o engajamento, esta fora.
   addComment: (postId, data) =>
     request(`/posts/${postId}/comments`, { method: 'POST', body: JSON.stringify(data) }),
   deleteComment: (id) => request(`/comments/${id}`, { method: 'DELETE' }),
@@ -57,8 +61,12 @@ export const api = {
     }),
 
   // diagnostico da integracao: responde sempre 200, com available dizendo se o
-  // engajamento esta de pe agora
+  // engajamento esta de pe agora e brokerAvailable dizendo o mesmo da fila
   engagementStatus: () => request('/engagement/status'),
+  // os totais de conversa e reacoes de todos os posts, numa chamada so. vem da copia
+  // que o monolito mantem a partir dos eventos do engajamento, e nao do microsservico:
+  // responde mesmo com ele fora do ar
+  engagementCounters: () => request('/engagement/counters'),
 
   listAuthors: () => request('/authors'),
   createAuthor: (data) => request('/authors', { method: 'POST', body: JSON.stringify(data) }),

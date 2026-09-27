@@ -1,9 +1,7 @@
 package com.blog.engagement.client;
 
 import com.blog.engagement.client.dto.CommentView;
-import com.blog.engagement.client.dto.NewComment;
 import com.blog.engagement.client.dto.NewReaction;
-import com.blog.engagement.client.dto.PurgeView;
 import com.blog.engagement.client.dto.ReactionSummaryView;
 import com.blog.engagement.client.dto.ServiceInfoView;
 import com.blog.shared.exception.BusinessRuleException;
@@ -50,11 +48,6 @@ public class EngagementFallbackFactory implements FallbackFactory<EngagementClie
         }
 
         @Override
-        public CommentView addComment(Long postId, NewComment body) {
-            throw traduzir();
-        }
-
-        @Override
         public void deleteComment(Long commentId) {
             throw traduzir();
         }
@@ -71,11 +64,6 @@ public class EngagementFallbackFactory implements FallbackFactory<EngagementClie
 
         @Override
         public ReactionSummaryView undoReaction(Long postId, String type, String reader) {
-            throw traduzir();
-        }
-
-        @Override
-        public PurgeView purgePost(Long postId) {
             throw traduzir();
         }
 

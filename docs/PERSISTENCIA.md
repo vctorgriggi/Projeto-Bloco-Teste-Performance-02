@@ -5,6 +5,8 @@ este documento detalha a camada de persistência do blog na segunda entrega. a p
 > **onde cada entidade mora hoje.** na terceira entrega o contexto de engajamento saiu do monólito e virou um serviço próprio, com o seu próprio banco. o `Comment` descrito abaixo mudou de processo e hoje vive no `engagement-service`, no banco `engagementdb`; `Author` e `Post` continuam no monólito, no `blogdb`. **o desenho da persistência do comentário não mudou** — mesmo mapeamento, mesmo índice, mesmo travamento otimista, mesma auditoria — e é por isso que este documento continua valendo para ele, só em outro endereço. o microsserviço ganhou também um aggregate novo, o `Reaction`, cuja modelagem está documentada em [MICROSSERVICO.md](MICROSSERVICO.md) junto dos repositórios dele.
 >
 > vale reparar em qual decisão desta entrega pagou por si na seguinte: modelar as referências entre aggregates por id, sem `@ManyToOne` nem chave estrangeira. foi ela que permitiu mover uma entidade de banco sem nenhuma relação para desmontar.
+>
+> **o que a quarta entrega acrescentou.** a arquitetura orientada a eventos (detalhada em [EVENTOS.md](EVENTOS.md)) trouxe três mudanças de persistência, todas pequenas e todas a serviço da mensageria: o `Comment` ganhou a coluna `submission_id`, com restrição de unicidade, que torna idempotente o registro de um comentário que chega pela fila; o `blogdb` ganhou a tabela `outbox_messages`, onde o evento de post apagado é gravado na mesma transação da exclusão; e ganhou também a `engagement_counters`, uma cópia de leitura dos totais de engajamento, alimentada por eventos. nenhuma das duas tabelas novas é auditada: o outbox é uma fila de saída, e os contadores são dado derivado, que se reconstrói a qualquer momento.
 
 ## modelo de dados
 

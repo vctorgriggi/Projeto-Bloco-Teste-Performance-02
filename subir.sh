@@ -8,8 +8,12 @@
 # enquanto nao ve o engajamento), mas demora e polui o log -- em uma apresentacao, isso
 # parece defeito.
 #
+# o broker (rabbitmq) sobe primeiro, por docker compose. ele e o unico que os servicos
+# toleram ver chegar depois -- os consumidores reconectam sozinhos, e o outbox guarda os
+# eventos enquanto isso --, mas subir antes evita um log cheio de "connection refused".
+#
 #   ./subir.sh          sobe tudo, incluindo o front-end
-#   ./subir.sh --sem-front   sobe apenas os quatro servicos
+#   ./subir.sh --sem-front   sobe o broker e os quatro servicos
 #
 # os logs de cada processo ficam em .logs/. para derrubar tudo: ./derrubar.sh
 
@@ -62,6 +66,25 @@ espera_http() {
     return 1
 }
 
+# como espera_http, mas com usuario e senha. o painel do rabbitmq so responde 200 para
+# quem se autentica, e e ele que diz que o broker terminou de subir (a porta amqp abre
+# antes de o broker estar pronto para aceitar declaracoes).
+espera_http_auth() {
+    local url="$1" nome="$2" credenciais="$3" limite="${4:-90}"
+    local i=0
+    while [ "$i" -lt "$limite" ]; do
+        if [ "$(curl -s -u "$credenciais" -o /dev/null -w '%{http_code}' --max-time 3 "$url" 2>/dev/null)" = "200" ]; then
+            verde "   ok  $nome respondendo (${i}s)"
+            return 0
+        fi
+        sleep 1
+        i=$((i + 1))
+    done
+    vermelho "   erro  $nome nao respondeu em ${limite}s"
+    cinza "         veja: docker compose logs rabbitmq"
+    return 1
+}
+
 sobe_servico() {
     local dir="$1" nome="$2" porta="$3" url="$4"
 
@@ -82,6 +105,18 @@ azul "subindo a stack do blog (logs em .logs/)"
 echo
 
 : > "$LOGS/pids"
+
+# 0. o broker de mensagens, em container
+if porta_ocupada 5672; then
+    cinza "   ja no ar  rabbitmq (porta 5672 ocupada) -- pulando"
+elif ! command -v docker >/dev/null 2>&1; then
+    vermelho "   aviso  docker nao encontrado: sem broker, comentar responde 503 e os contadores"
+    vermelho "          da estante nao se atualizam. o resto do blog funciona."
+else
+    azul "-> rabbitmq (portas 5672 e 15672, via docker compose)"
+    ( cd "$RAIZ" && docker compose up -d rabbitmq ) > "$LOGS/rabbitmq.log" 2>&1
+    espera_http_auth "http://localhost:15672/api/overview" rabbitmq guest:guest 90 || exit 1
+fi
 
 # 1. configuracao central: os servicos de negocio pedem as propriedades deles aqui
 sobe_servico config-server    config-server    8888 "http://localhost:8888/blog-api/default" || exit 1
@@ -137,6 +172,7 @@ cat <<'ENDERECOS'
    api (monolito) ......... http://localhost:8080/api
    microsservico .......... http://localhost:8081/api
    painel do eureka ....... http://localhost:8761
+   painel do rabbitmq ..... http://localhost:15672   (guest / guest)
    config server .......... http://localhost:8888/blog-api/default
    status da integracao ... http://localhost:8080/api/engagement/status
 ENDERECOS

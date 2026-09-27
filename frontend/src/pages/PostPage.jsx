@@ -53,6 +53,11 @@ export default function PostPage() {
   const [commentsError, setCommentsError] = useState(null)
   const [form, setForm] = useState({ authorName: '', content: '' })
 
+  // recados que o leitor enviou e que ainda estao na fila. o envio responde 202 com um
+  // submissionId; quando o engajamento processa a mensagem, o comentario aparece na
+  // listagem com esse mesmo id, e sai daqui
+  const [pending, setPending] = useState([])
+
   // modo edicao do proprio post (titulo e texto)
   const [editing, setEditing] = useState(false)
   const [editForm, setEditForm] = useState({ title: '', content: '' })
@@ -71,6 +76,8 @@ export default function PostPage() {
       .then((c) => {
         setComments(c)
         setCommentsError(null)
+        const gravados = new Set(c.map((comment) => comment.submissionId).filter(Boolean))
+        setPending((atuais) => atuais.filter((p) => !gravados.has(p.submissionId)))
       })
       .catch((e) => {
         setComments([])
@@ -90,6 +97,15 @@ export default function PostPage() {
   }
 
   useEffect(load, [id])
+
+  // enquanto houver recado na fila, a conversa e reconsultada de tempos em tempos. com o
+  // engajamento de pe, o recado aparece em um ou dois ciclos; com ele fora, continua
+  // "na fila" ate ele voltar -- e ai aparece sozinho, sem o leitor recarregar a pagina
+  useEffect(() => {
+    if (pending.length === 0) return undefined
+    const intervalo = setInterval(loadComments, 3000)
+    return () => clearInterval(intervalo)
+  }, [pending.length, id])
 
   function startEditing() {
     setEditForm({ title: post.title, content: post.content })
@@ -142,12 +158,15 @@ export default function PostPage() {
     }
   }
 
+  // o envio so limpa o formulario depois de aceito. se a fila estiver fora do ar, a api
+  // responde 503 e o texto continua onde o leitor escreveu -- nada se perde em silencio
   async function handleAddComment(event) {
     event.preventDefault()
     try {
-      await api.addComment(id, form)
+      const envio = await api.addComment(id, form)
+      setPending((atuais) => [...atuais, envio])
       setForm({ authorName: '', content: '' })
-      loadComments()
+      setTimeout(loadComments, 800)
     } catch (e) {
       setError(e.message)
     }
@@ -245,8 +264,8 @@ export default function PostPage() {
 
         {commentsError && (
           <p className="error-note">
-            {commentsError} — o post continua aqui; a conversa volta quando o serviço de
-            engajamento responder.
+            {commentsError} — o post continua aqui, e você ainda pode deixar um recado: ele
+            espera na fila e aparece quando o serviço de engajamento voltar.
           </p>
         )}
 
@@ -262,30 +281,40 @@ export default function PostPage() {
               <p>{c.content}</p>
             </li>
           ))}
-          {comments.length === 0 && !commentsError && (
+          {pending.map((p) => (
+            <li key={p.submissionId} className="comment comment-pending">
+              <div className="comment-head">
+                <p className="comment-author">{p.authorName}</p>
+                <span className="tag tag-queued" title="aceito pelo blog, esperando o serviço de engajamento gravar">
+                  na fila
+                </span>
+              </div>
+              <p>{p.content}</p>
+            </li>
+          ))}
+          {comments.length === 0 && pending.length === 0 && !commentsError && (
             <p className="muted">seja o primeiro a comentar.</p>
           )}
         </ul>
 
-        {/* sem servico de engajamento nao ha onde gravar o recado, entao o formulario
-            sai da tela em vez de aceitar um texto que vai se perder */}
-        {!commentsError && (
-          <form onSubmit={handleAddComment} className="comment-form">
-            <input
-              placeholder="seu nome"
-              value={form.authorName}
-              onChange={(e) => setForm({ ...form, authorName: e.target.value })}
-              required
-            />
-            <textarea
-              placeholder="deixe um recado..."
-              value={form.content}
-              onChange={(e) => setForm({ ...form, content: e.target.value })}
-              required
-            />
-            <button type="submit" className="btn">comentar</button>
-          </form>
-        )}
+        {/* na terceira entrega o formulario saia da tela com o engajamento fora do ar,
+            porque o recado nao teria onde ser gravado. agora ele vai para uma fila, que
+            guarda a mensagem ate o servico voltar -- entao o formulario fica */}
+        <form onSubmit={handleAddComment} className="comment-form">
+          <input
+            placeholder="seu nome"
+            value={form.authorName}
+            onChange={(e) => setForm({ ...form, authorName: e.target.value })}
+            required
+          />
+          <textarea
+            placeholder="deixe um recado..."
+            value={form.content}
+            onChange={(e) => setForm({ ...form, content: e.target.value })}
+            required
+          />
+          <button type="submit" className="btn">comentar</button>
+        </form>
       </section>
     </article>
   )

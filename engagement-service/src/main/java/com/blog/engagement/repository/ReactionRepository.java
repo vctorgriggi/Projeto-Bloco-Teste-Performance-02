@@ -40,4 +40,8 @@ public interface ReactionRepository extends JpaRepository<Reaction, Long> {
 
     // limpeza do engajamento de um post que deixou de existir
     long deleteByPostId(Long postId);
+
+    // mesma ideia do CommentRepository: o total de cada post, para republicar o estado
+    @Query("select r.postId as postId, count(r) as total from Reaction r group by r.postId")
+    List<PostTotal> countGroupedByPost();
 }

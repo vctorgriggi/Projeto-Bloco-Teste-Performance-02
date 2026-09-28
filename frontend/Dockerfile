@@ -3,7 +3,7 @@
 # imagem do front-end: o build do vite gera arquivos estaticos, e quem os serve em
 # producao e o nginx -- nao o servidor de desenvolvimento do vite.
 
-FROM node:22-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /build
 COPY package.json package-lock.json ./
 RUN --mount=type=cache,target=/root/.npm npm ci --no-audit --no-fund

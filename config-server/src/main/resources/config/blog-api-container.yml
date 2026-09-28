@@ -1,0 +1,19 @@
+# ---------------------------------------------------------------------------------
+# o monolito no ambiente de conteiner. o endereco do banco e a credencial sao
+# ambiente; o fato de o schema vir de migracoes e decisao de codigo, e esta no
+# application.yml do proprio servico (perfil container).
+# ---------------------------------------------------------------------------------
+
+spring:
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:postgres}:${DB_PORT:5432}/${DB_NAME:blogdb}
+    driver-class-name: org.postgresql.Driver
+    username: ${DB_USERNAME:blog}
+    password: ${DB_PASSWORD:blog}
+
+# o front e servido pelo nginx na mesma origem da api (/api e repassado ao monolito),
+# entao o navegador nao faz chamada cross-origin. a origem liberada fica so para quem
+# acessar a api direto de outra porta.
+app:
+  cors:
+    allowed-origin: ${CORS_ALLOWED_ORIGIN:http://localhost:8080}

@@ -1,0 +1,29 @@
+# o dependabot abre pull requests quando sai versao nova de uma dependencia -- e cada
+# um passa pelo pipeline inteiro (testes, imagens, e2e no kubernetes) antes de alguem
+# decidir se entra. semanal e agrupado, para nao virar ruido.
+version: 2
+updates:
+  - package-ecosystem: maven
+    directories: ["/backend", "/engagement-service", "/config-server", "/discovery-server"]
+    schedule: { interval: weekly }
+    groups:
+      spring:
+        patterns: ["org.springframework*"]
+      demais:
+        patterns: ["*"]
+        exclude-patterns: ["org.springframework*"]
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule: { interval: weekly }
+    groups:
+      front:
+        patterns: ["*"]
+
+  - package-ecosystem: docker
+    directories: ["/backend", "/engagement-service", "/config-server", "/discovery-server", "/frontend"]
+    schedule: { interval: weekly }
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly }

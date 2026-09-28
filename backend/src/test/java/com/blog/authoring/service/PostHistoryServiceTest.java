@@ -89,6 +89,23 @@ class PostHistoryServiceTest {
         });
     }
 
+    // um post de verdade tem mais que 255 caracteres. o texto e @Lob na tabela posts, mas
+    // o envers nao levava isso para a tabela de auditoria, que nascia com varchar(255): o
+    // primeiro post longo quebrava a gravacao do historico, e com ela a propria criacao do
+    // post. o bug existia desde a segunda entrega, escondido porque os textos de exemplo
+    // e de teste eram curtos, e apareceu na quinta, ao gerar o schema do postgres.
+    @Test
+    void postComTextoLongo_temHistoricoComOTextoInteiro() {
+        Long autorId = authorService.create(new AuthorRequest("Ana", "ana-post-longo@blog.dev", "bio")).getId();
+        String textoLongo = "um paragrafo de verdade. ".repeat(80);
+
+        Long postId = postService.create(new PostRequest("Post longo", textoLongo, autorId)).id();
+
+        List<PostRevisionResponse> historico = postHistoryService.historyOf(postId);
+        assertThat(historico).hasSize(1);
+        assertThat(historico.get(0).content()).isEqualTo(textoLongo);
+    }
+
     @Test
     void historicoDePostInexistente_lancaNotFound() {
         assertThatThrownBy(() -> postHistoryService.historyOf(999_999L))

@@ -1,27 +1,62 @@
-# o broker de mensagens da quarta entrega.
+# a stack do blog em conteineres. dois modos, no mesmo arquivo:
 #
-# e a unica peca da stack que nao e um projeto java deste repositorio, e por isso sobe
-# por container em vez de por ./mvnw. o ./subir.sh chama este arquivo sozinho; para subir
-# so o broker: docker compose up -d rabbitmq
+#   docker compose up -d rabbitmq
+#       so o broker. e o que o ./subir.sh usa no desenvolvimento, com os servicos
+#       rodando pelo ./mvnw na maquina (quarta entrega).
 #
-# a imagem -management traz o painel web (http://localhost:15672, guest/guest), que e
-# onde se ve as filas enchendo e esvaziando, as dead letters e o que cada exchange roteia.
-# para a demonstracao, ele vale tanto quanto o painel do eureka.
+#   docker compose --profile completo up -d --build
+#       o ambiente simulado de producao (quinta entrega): os cinco servicos em
+#       conteiner, com postgres, rabbitmq e a stack de observabilidade. o front fica em
+#       http://localhost:8080 e o grafana em http://localhost:3000.
 #
-# nenhuma fila e declarada aqui: exchanges, filas e bindings sao criados pelos proprios
-# servicos quando conectam (veja MessagingConfig em cada um). o broker sobe vazio.
+# os nomes dos servicos aqui sao os mesmos dos Services do kubernetes (k8s/), e isso e
+# deliberado: o perfil "container" do config server usa esses nomes como enderecos, e
+# um arquivo de configuracao so serve os dois ambientes.
+
+# o que todo servico java recebe. o perfil container liga o postgres, as migracoes e as
+# sondas; o resto e o endereco da configuracao central e do coletor de telemetria.
+x-java-service: &java-service
+  profiles: ["completo"]
+  restart: unless-stopped
+  environment: &java-env
+    SPRING_PROFILES_ACTIVE: container
+    CONFIG_SERVER_URL: http://config-server:8888
+    OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4318
+    OTEL_RESOURCE_ATTRIBUTES: deployment.environment=compose
+    OTEL_METRIC_EXPORT_INTERVAL: "15000"
+
+# a sonda de saude de todo servico java: o actuator responde "UP"? a imagem e alpine,
+# que tem wget (e nao curl)
+x-healthcheck: &java-healthcheck
+  interval: 10s
+  timeout: 3s
+  retries: 18
+  start_period: 20s
+
 services:
+
+  # ---- broker (os dois modos) --------------------------------------------------------
+  #
+  # a imagem -management traz o painel web (http://localhost:15672, guest/guest), que e
+  # onde se ve as filas enchendo e esvaziando, as dead letters e o que cada exchange
+  # roteia. nenhuma fila e declarada aqui: exchanges, filas e bindings sao criados pelos
+  # proprios servicos quando conectam (veja MessagingConfig em cada um).
   rabbitmq:
     image: rabbitmq:3.13-management
     container_name: blog-rabbitmq
     hostname: blog-rabbitmq   # o rabbitmq guarda os dados por nome de host; fixo, sobrevive a recriacao
+    # como o usuario rabbitmq, e nao root, inclusive o healthcheck: rodando como root, na
+    # primeira subida com volume novo, o healthcheck criava o .erlang.cookie antes do
+    # servidor e com o dono errado, e o broker morria (eacces). visto na quinta entrega.
+    user: "999:999"
+    restart: unless-stopped
     ports:
       - "5672:5672"     # amqp, onde os servicos conectam
       - "15672:15672"   # painel de administracao
     volumes:
-      # as filas sao duraveis e as mensagens persistentes, mas isso so vale se o disco
-      # do broker sobreviver. com o volume, um "docker compose restart" nao perde o que
-      # estava esperando na fila -- que e justamente o que a demonstracao quer mostrar.
+      # as filas sao duraveis e as mensagens persistentes, mas isso so vale se o disco do
+      # broker sobreviver. com o volume, um "docker compose restart" nao perde o que
+      # estava esperando na fila.
       - rabbitmq-data:/var/lib/rabbitmq
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
@@ -29,5 +64,130 @@ services:
       timeout: 5s
       retries: 12
 
+  # ---- dados -------------------------------------------------------------------------
+
+  # um servidor, dois bancos, dois usuarios (deploy/postgres/01-bancos.sh)
+  postgres:
+    image: postgres:16-alpine
+    profiles: ["completo"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_PASSWORD: postgres
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./deploy/postgres/01-bancos.sh:/docker-entrypoint-initdb.d/01-bancos.sh:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+  # ---- observabilidade ---------------------------------------------------------------
+  #
+  # a stack lgtm da grafana num conteiner so: um coletor opentelemetry que recebe o que
+  # os agentes mandam, Loki (logs), Tempo (traces), Prometheus (metricas) e o Grafana
+  # (http://localhost:3000) com as tres fontes ja ligadas entre si -- de um trace se
+  # chega aos logs dele, e vice-versa. em producao cada peca seria um servico proprio,
+  # com armazenamento persistente; para um ambiente simulado, um conteiner basta.
+  lgtm:
+    image: grafana/otel-lgtm:0.34.0
+    profiles: ["completo"]
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    volumes:
+      # os dados de loki, tempo, prometheus e grafana. sem o volume, recriar o conteiner
+      # apagava todo o historico de logs e traces
+      - lgtm-data:/data
+      - ./deploy/otel/otelcol-config.yaml:/otel-lgtm/otelcol-config.yaml:ro
+      - ./deploy/grafana/dashboards:/otel-lgtm/blog-dashboards:ro
+      - ./deploy/grafana/blog-dashboards.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/blog-dashboards.yaml:ro
+
+  # ---- infraestrutura spring cloud ---------------------------------------------------
+
+  config-server:
+    <<: *java-service
+    build: ./config-server
+    image: blog/config-server:dev
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4318
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=compose
+    ports:
+      - "8888:8888"
+    healthcheck:
+      <<: *java-healthcheck
+      test: ["CMD", "wget", "-qO-", "http://localhost:8888/actuator/health"]
+
+  discovery-server:
+    <<: *java-service
+    build: ./discovery-server
+    image: blog/discovery-server:dev
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4318
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment=compose
+    ports:
+      - "8761:8761"
+    healthcheck:
+      <<: *java-healthcheck
+      test: ["CMD", "wget", "-qO-", "http://localhost:8761/actuator/health"]
+
+  # ---- servicos de negocio -----------------------------------------------------------
+
+  # duas replicas, e nenhuma porta publicada no host: quem as alcanca e o monolito, pelo
+  # eureka, que ve as duas e distribui as chamadas; e as filas, que dividem as mensagens
+  # entre elas. com o postgres, as duas enxergam o mesmo banco -- o que o h2 em memoria
+  # da quarta entrega nao permitia.
+  engagement-service:
+    <<: *java-service
+    build: ./engagement-service
+    image: blog/engagement-service:dev
+    deploy:
+      replicas: 2
+    environment:
+      <<: *java-env
+      DB_PASSWORD: engagement
+    depends_on:
+      config-server: { condition: service_healthy }
+      discovery-server: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    healthcheck:
+      <<: *java-healthcheck
+      test: ["CMD", "wget", "-qO-", "http://localhost:8081/actuator/health/readiness"]
+
+  blog-api:
+    <<: *java-service
+    build: ./backend
+    image: blog/blog-api:dev
+    environment:
+      <<: *java-env
+      DB_PASSWORD: blog
+    depends_on:
+      config-server: { condition: service_healthy }
+      discovery-server: { condition: service_healthy }
+      postgres: { condition: service_healthy }
+      rabbitmq: { condition: service_healthy }
+    healthcheck:
+      <<: *java-healthcheck
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/actuator/health/readiness"]
+
+  # a unica porta publica da aplicacao: o nginx serve o front e repassa /api ao monolito
+  frontend:
+    profiles: ["completo"]
+    build: ./frontend
+    image: blog/frontend:dev
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    depends_on:
+      blog-api: { condition: service_healthy }
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/healthz"]
+      interval: 10s
+      timeout: 3s
+      retries: 6
+
 volumes:
   rabbitmq-data:
+  postgres-data:
+  lgtm-data:

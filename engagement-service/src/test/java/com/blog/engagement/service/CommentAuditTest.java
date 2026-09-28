@@ -71,4 +71,20 @@ class CommentAuditTest {
         assertThat(estadoNaExclusao.getAuthorName()).isEqualTo("Carla");
         assertThat(estadoNaExclusao.getContent()).isEqualTo("primeiro recado");
     }
+
+    // o recado longo que quebrava a auditoria: com @Lob, a comments_AUD nascia com
+    // varchar(255), e o comentario inteiro falhava ao gravar. o defeito veio junto com a
+    // entidade desde a segunda entrega e so apareceu na quinta, ao gerar o schema do
+    // postgres
+    @Test
+    void comentarioLongo_eGravadoEAuditadoInteiro() {
+        String recadoLongo = "concordo com cada ponto do texto. ".repeat(40);
+
+        Comment comentario = commentService.addToPost(1L, new CommentRequest("Diego", recadoLongo));
+
+        AuditReader auditReader = AuditReaderFactory.get(entityManagerFactory.createEntityManager());
+        Comment auditado = auditReader.find(Comment.class, comentario.getId(),
+                auditReader.getRevisions(Comment.class, comentario.getId()).get(0));
+        assertThat(auditado.getContent()).isEqualTo(recadoLongo);
+    }
 }

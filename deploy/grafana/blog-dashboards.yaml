@@ -1,0 +1,11 @@
+# registra no grafana o dashboard do blog, ao lado dos que a imagem otel-lgtm ja traz
+# (metricas RED e de JVM). o mesmo arquivo e montado pelo compose e pelo kubernetes.
+apiVersion: 1
+
+providers:
+  - name: "Blog"
+    type: file
+    folder: "Blog"
+    options:
+      path: /otel-lgtm/blog-dashboards
+      foldersFromFilesStructure: false

@@ -1,0 +1,20 @@
+# o que todo servico java recebe no kubernetes. o perfil container liga o postgres, as
+# migracoes e as sondas; o resto e o endereco da configuracao central e do coletor.
+# os nomes (config-server, lgtm) sao Services deste namespace, resolvidos pelo dns do
+# cluster -- os mesmos nomes do compose, que e o que permite o config server ter um
+# arquivo so para os dois ambientes.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: blog-java
+  namespace: blog
+  labels: { app.kubernetes.io/part-of: blog }
+data:
+  SPRING_PROFILES_ACTIVE: container
+  CONFIG_SERVER_URL: http://config-server:8888
+  OTEL_EXPORTER_OTLP_ENDPOINT: http://lgtm:4318
+  OTEL_METRIC_EXPORT_INTERVAL: "15000"
+  # o config server pode demorar a ficar pronto na primeira subida do cluster; o cliente
+  # espera mais do que em desenvolvimento antes de desistir (e o kubernetes reinicia o
+  # pod se ainda assim nao der)
+  SPRING_CLOUD_CONFIG_RETRY_MAX_ATTEMPTS: "40"

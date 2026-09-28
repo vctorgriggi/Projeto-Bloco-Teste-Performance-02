@@ -1,18 +1,22 @@
 # blog (kissaten)
 
+[![pipeline](https://github.com/vctorgriggi/Projeto-Bloco-Teste-Performance-02/actions/workflows/pipeline.yml/badge.svg)](https://github.com/vctorgriggi/Projeto-Bloco-Teste-Performance-02/actions/workflows/pipeline.yml)
+
 blog em Spring Boot com front-end em React. autores escrevem posts, posts viram de rascunho para publicado, e leitores comentam e reagem.
 
-o projeto começou como um monólito organizado em camadas e bounded contexts (primeira entrega), evoluiu para uma camada de persistência mais completa, com histórico de mudanças dos dados e testes automatizados (segunda entrega), e se partiu: o contexto de engajamento saiu do monólito e virou um **microsserviço** com processo, banco e deploy próprios, com os dois serviços conversando por rede através de Spring Cloud (terceira entrega). agora a conversa entre eles ficou **orientada a eventos**: onde quem chama não precisa da resposta para seguir, a chamada HTTP deu lugar a mensagens no **RabbitMQ** — o comentário virou um comando em fila, o post apagado virou um evento publicado por outbox, e a estante ganhou contadores alimentados pelos eventos do engajamento (quarta entrega).
+o projeto começou como um monólito organizado em camadas e bounded contexts (primeira entrega), evoluiu para uma camada de persistência mais completa, com histórico de mudanças dos dados e testes automatizados (segunda entrega), e se partiu: o contexto de engajamento saiu do monólito e virou um **microsserviço** com processo, banco e deploy próprios, com os dois serviços conversando por rede através de Spring Cloud (terceira entrega). agora a conversa entre eles ficou **orientada a eventos**: onde quem chama não precisa da resposta para seguir, a chamada HTTP deu lugar a mensagens no **RabbitMQ** — o comentário virou um comando em fila, o post apagado virou um evento publicado por outbox, e a estante ganhou contadores alimentados pelos eventos do engajamento (quarta entrega). por fim, o sistema foi preparado para **operar em produção**: cada serviço virou uma imagem Docker, a stack roda num cluster **Kubernetes** com PostgreSQL, rollout sem queda e autoescalonamento, a operação é observável com **OpenTelemetry e Grafana** (logs, traces que atravessam a fila, métricas), e um pipeline no **GitHub Actions** testa, implanta num Kubernetes efêmero e publica cada versão (quinta entrega).
 
-a explicação completa da arquitetura, com os diagramas de componentes e de sequência, está em [docs/ARQUITETURA.md](docs/ARQUITETURA.md); os detalhes da camada de persistência e do histórico estão em [docs/PERSISTENCIA.md](docs/PERSISTENCIA.md); o microsserviço e a integração por HTTP estão em [docs/MICROSSERVICO.md](docs/MICROSSERVICO.md); e a arquitetura orientada a eventos — prós e contras, topologia, padrões de mensagem, fluxos e o roteiro de demonstração — está em [docs/EVENTOS.md](docs/EVENTOS.md).
+a explicação completa da arquitetura, com os diagramas de componentes e de sequência, está em [docs/ARQUITETURA.md](docs/ARQUITETURA.md); os detalhes da camada de persistência e do histórico estão em [docs/PERSISTENCIA.md](docs/PERSISTENCIA.md); o microsserviço e a integração por HTTP estão em [docs/MICROSSERVICO.md](docs/MICROSSERVICO.md); a arquitetura orientada a eventos — prós e contras, topologia, padrões de mensagem, fluxos e o roteiro de demonstração — está em [docs/EVENTOS.md](docs/EVENTOS.md); e a implantação — contêineres, Kubernetes, monitoramento, CI/CD, testes e o roteiro de operação — está em [docs/IMPLANTACAO.md](docs/IMPLANTACAO.md). o que mudou em cada versão está no [CHANGELOG.md](CHANGELOG.md).
 
 ## stack
 
 - Java 21 e Spring Boot 3.3 (web, data jpa, validation)
 - Spring Cloud 2023.0.3: Config (configuração central), Eureka (descoberta), OpenFeign (chamada declarativa), LoadBalancer, Resilience4j (circuit breaker)
 - RabbitMQ 3.13 com Spring AMQP (`spring-boot-starter-amqp`): exchanges, filas duráveis, dead letter, publisher confirms
-- Docker, só para o RabbitMQ (e para os testes de integração com Testcontainers)
-- H2 em memória, um banco por serviço (zera a cada restart, sem precisar instalar banco)
+- Docker (imagens de cada serviço, compose), Kubernetes com kustomize (kind no ambiente local e no pipeline)
+- OpenTelemetry (agente Java) e Grafana LGTM: Loki, Tempo, Prometheus e Grafana
+- GitHub Actions (CI/CD) e GitHub Container Registry; k6 para carga; Vitest no front
+- H2 em memória no desenvolvimento, um banco por serviço (zera a cada restart, sem precisar instalar banco); PostgreSQL 16 com migrações Flyway em contêiner
 - Hibernate Envers e Spring Data Envers para o histórico de dados
 - React 18 com Vite
 - Maven (via wrapper, não precisa instalar)
@@ -28,9 +32,12 @@ o sistema são quatro processos de back-end, um broker de mensagens e um front-e
 ├── backend              o monólito: posts e autores                 :8080
 ├── engagement-service   o microsserviço: comentários e reações       :8081
 ├── frontend             a interface (React + Vite)                  :5173
+├── deploy               kubernetes (kustomize), kind, postgres, coletor e dashboards
+├── scripts              e2e, carga (k6), subir e derrubar o cluster kubernetes
+├── .github              pipeline de ci/cd, dependabot, template de pr
 ├── docs                 documentação de arquitetura
-├── docker-compose.yml   o broker (RabbitMQ)                          :5672, painel :15672
-├── subir.sh             sobe tudo na ordem certa
+├── docker-compose.yml   o broker, ou a stack inteira (--profile completo)
+├── subir.sh             sobe tudo na ordem certa (desenvolvimento)
 └── derrubar.sh          encerra tudo
 ```
 
@@ -56,7 +63,24 @@ o navegador fala **apenas** com o monólito; o engajamento é alcançado por den
 
 ## como rodar
 
-precisa de um JDK 21, do Node 18+ e do Docker instalados. o Maven vem junto pelo wrapper; o Docker é só para o RabbitMQ.
+são três jeitos, do mais leve ao mais próximo de produção:
+
+| como | o que sobe | para quê |
+| --- | --- | --- |
+| `./subir.sh` | os serviços pelo `./mvnw`, H2 em memória, RabbitMQ em contêiner | desenvolvimento |
+| `docker compose --profile completo up -d --build --wait` | tudo em contêiner: PostgreSQL, RabbitMQ, observabilidade, duas réplicas do engajamento | ambiente simulado de produção |
+| `scripts/k8s-subir.sh` | tudo num cluster Kubernetes local (kind), com HPA e rollout sem queda | ambiente simulado de produção orquestrado |
+
+nos dois últimos, a interface fica em `http://localhost:8080` (compose) ou `http://localhost:30080` (Kubernetes), e o Grafana em `http://localhost:3000` ou `http://localhost:30300` (admin / admin). o teste de ponta a ponta roda contra qualquer um dos três:
+
+```bash
+scripts/e2e.sh http://localhost:8080                                  # compose
+GRAFANA_URL=http://localhost:30300 scripts/e2e.sh http://localhost:30080   # kubernetes, conferindo traces e logs
+```
+
+o detalhe dos dois modos de produção — e o roteiro de demonstração da operação — está em [docs/IMPLANTACAO.md](docs/IMPLANTACAO.md). o resto desta seção é o modo de desenvolvimento.
+
+precisa de um JDK 21, do Node 18+ e do Docker instalados (e, para o Kubernetes, do `kind` e do `kubectl`). o Maven vem junto pelo wrapper.
 
 ### tudo de uma vez
 
@@ -306,14 +330,17 @@ as reações não são auditadas: auditar cada clique encheria a tabela de hist�
 
 ## testes
 
-são 133 testes automatizados, e cada serviço roda os seus a partir do próprio diretório com `./mvnw test`.
+são 153 testes automatizados — cada serviço Java roda os seus com `./mvnw verify` (que também gera a cobertura, em `target/site/jacoco`), e o front com `npm test`.
 
 | onde                | quantos | o que cobre                                                        |
 | ------------------- | ------- | ------------------------------------------------------------------ |
-| `backend`           | 73      | persistência, histórico, tratamento de erro, a fronteira de rede, o outbox, os contadores e a mensageria com um RabbitMQ real |
-| `engagement-service`| 54      | repositórios, regras de reação, API, auditoria do comentário, os consumidores e a publicação de eventos, e a mensageria com um RabbitMQ real |
+| `backend`           | 76      | persistência, histórico, tratamento de erro, a fronteira de rede, o outbox (inclusive o contexto do trace), os contadores e a mensageria com um RabbitMQ real |
+| `engagement-service`| 56      | repositórios, regras de reação, API, auditoria do comentário, os consumidores e a publicação de eventos, e a mensageria com um RabbitMQ real |
 | `config-server`     | 5       | serve a configuração de cada serviço pelos nomes que os clientes usam |
 | `discovery-server`  | 1       | o registro sobe e responde                                          |
+| `frontend`          | 15      | cliente da API, estante com contadores, recado "na fila", selos     |
+
+além deles, o **teste de ponta a ponta** ([scripts/e2e.sh](scripts/e2e.sh)) roda contra a stack implantada — no compose, no Kubernetes e no pipeline — e o **teste de carga** ([scripts/carga.js](scripts/carga.js), k6) põe 40 leitores sobre o cluster enquanto o autoescalonamento acontece. o pipeline ([.github/workflows/pipeline.yml](.github/workflows/pipeline.yml)) roda tudo isso a cada push: testes, validação dos manifestos, imagens, e2e num Kubernetes criado do zero, e só então a publicação das imagens.
 
 na camada de persistência há testes de repositório com `@DataJpaTest` (consultas derivadas, agregação por tipo, restrições de unicidade, valores padrão e travamento otimista) e testes de histórico com `@SpringBootTest` que exercitam o Envers de ponta a ponta — o ciclo de vida completo de um post e o endpoint de consulta.
 
@@ -321,7 +348,7 @@ na integração distribuída, os testes de API do monólito trocam o cliente do 
 
 na mensageria, os testes chamam os consumidores como métodos e dublam o publicador, o que cobre as decisões de cada um sem precisar de broker: a mensagem repetida que não duplica, a atrasada que é descartada, a transação revertida que não publica nada, o relay que para na primeira falha. os dois testes de integração (`MessagingIntegrationTest`) sobem um **RabbitMQ de verdade em container**, com Testcontainers, e verificam o que só o broker faz: o roteamento, a confirmação de publicação, a dead letter e o alternate exchange. eles precisam de Docker; sem ele, são pulados em vez de falhar.
 
-a conversa entre os processos no ar — incluindo derrubar o microsserviço e o broker no meio — foi verificada subindo a stack, e o roteiro está em [docs/EVENTOS.md](docs/EVENTOS.md).
+a conversa entre os processos no ar — incluindo derrubar o microsserviço e o broker no meio — foi verificada subindo a stack; o roteiro da mensageria está em [docs/EVENTOS.md](docs/EVENTOS.md), e o da operação em produção em [docs/IMPLANTACAO.md](docs/IMPLANTACAO.md).
 
 ## erros
 

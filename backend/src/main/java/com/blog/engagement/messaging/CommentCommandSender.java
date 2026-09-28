@@ -2,6 +2,8 @@ package com.blog.engagement.messaging;
 
 import com.blog.shared.exception.ServiceUnavailableException;
 import com.blog.shared.messaging.ConfirmedPublisher;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.amqp.AmqpException;
 import org.springframework.stereotype.Component;
 
@@ -20,6 +22,8 @@ import static com.blog.shared.messaging.Topology.COMMENT_REGISTER;
 @Component
 public class CommentCommandSender {
 
+    private static final Logger log = LoggerFactory.getLogger(CommentCommandSender.class);
+
     private final ConfirmedPublisher publisher;
 
     public CommentCommandSender(ConfirmedPublisher publisher) {
@@ -33,6 +37,10 @@ public class CommentCommandSender {
                 message.getMessageProperties().setType(RegisterCommentCommand.TYPE);
                 return message;
             });
+            // com o id do trace no log (quinta entrega), esta linha e a do engajamento que
+            // grava o comentario aparecem juntas quando se busca o trace no grafana
+            log.info("comentario aceito no post {} e enviado a fila (envio {})",
+                    command.postId(), command.submissionId());
         } catch (AmqpException e) {
             throw new ServiceUnavailableException(
                     "A fila de mensagens esta indisponivel e o comentario nao foi enviado. Tente novamente em instantes.",

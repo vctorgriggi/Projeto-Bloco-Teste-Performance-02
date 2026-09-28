@@ -1,0 +1,8 @@
+# tudo do blog mora num namespace proprio: um "kubectl delete namespace blog" limpa o
+# ambiente inteiro, e as cotas e permissoes, se um dia existirem, tem onde se apoiar.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: blog
+  labels:
+    app.kubernetes.io/part-of: blog

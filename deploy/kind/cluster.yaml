@@ -1,0 +1,21 @@
+# o cluster kubernetes local da demonstracao e do pipeline: um kind (kubernetes dentro
+# do docker) com um no so.
+#
+# as portas mapeadas sao as NodePorts dos servicos que alguem precisa abrir no
+# navegador. em producao a entrada seria um Ingress ou um Gateway com dns e tls; num
+# cluster local, publicar a porta do no e o suficiente e nao exige instalar um
+# controlador de entrada.
+kind: Cluster
+apiVersion: kind.x-k8s.io/v1alpha4
+name: blog
+nodes:
+  - role: control-plane
+    extraPortMappings:
+      - containerPort: 30080   # front-end (e a api, por ele)
+        hostPort: 30080
+      - containerPort: 30300   # grafana
+        hostPort: 30300
+      - containerPort: 31567   # painel do rabbitmq
+        hostPort: 31567
+      - containerPort: 30761   # painel do eureka
+        hostPort: 30761

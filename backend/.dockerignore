@@ -1,0 +1,8 @@
+# o contexto de build leva so o que o Dockerfile usa. target/ em especial: sem isto, um
+# jar velho de uma compilacao local iria junto e ocuparia o contexto a toa.
+target/
+.idea/
+*.iml
+.vscode/
+.DS_Store
+.mvn/wrapper/maven-wrapper.jar

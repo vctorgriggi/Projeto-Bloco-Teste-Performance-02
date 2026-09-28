@@ -6,6 +6,7 @@ import com.blog.engagement.domain.ReactionType;
 import com.blog.engagement.repository.CommentRepository;
 import com.blog.engagement.repository.ReactionRepository;
 import org.springframework.boot.CommandLineRunner;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
@@ -18,8 +19,12 @@ import org.springframework.context.annotation.Profile;
 // em sequencia. e aceitavel para dado de exemplo, mas mostra bem o custo de nao
 // ter integridade referencial entre servicos: quem garante a coerencia deixa de
 // ser o banco e passa a ser o fluxo da aplicacao.
+//
+// no ambiente de conteiner ele fica desligado (engagement.seed.enabled = false): la ha
+// duas replicas subindo juntas contra o mesmo postgres, e as duas veriam o banco vazio.
 @Configuration
 @Profile("!test")
+@ConditionalOnProperty(name = "engagement.seed.enabled", havingValue = "true", matchIfMissing = true)
 public class DataSeeder {
 
     @Bean

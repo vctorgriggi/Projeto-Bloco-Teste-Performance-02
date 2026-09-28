@@ -1,0 +1,13 @@
+# ---------------------------------------------------------------------------------
+# o microsservico no ambiente de conteiner: o banco dele, separado do do monolito.
+# sao dois bancos no mesmo servidor postgres, cada um com o seu usuario -- um usuario
+# nao enxerga o banco do outro, e e isso que mantem "um banco por servico" de verdade
+# mesmo dividindo a instancia.
+# ---------------------------------------------------------------------------------
+
+spring:
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:postgres}:${DB_PORT:5432}/${DB_NAME:engagementdb}
+    driver-class-name: org.postgresql.Driver
+    username: ${DB_USERNAME:engagement}
+    password: ${DB_PASSWORD:engagement}

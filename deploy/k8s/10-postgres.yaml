@@ -1,0 +1,75 @@
+# postgres: um servidor, dois bancos, dois usuarios (o script de inicializacao e o mesmo
+# do compose, em deploy/postgres, virado ConfigMap pelo kustomize).
+#
+# StatefulSet, e nao Deployment: o pod tem identidade estavel e um volume proprio que o
+# acompanha. se o pod morrer, o substituto monta o mesmo disco. em producao seria um
+# banco gerenciado (rds, cloud sql) ou um operador (cloudnativepg), com replica e backup.
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: blog
+  labels: { app.kubernetes.io/name: postgres, app.kubernetes.io/part-of: blog }
+spec:
+  selector: { app.kubernetes.io/name: postgres }
+  ports:
+    - name: postgres
+      port: 5432
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres
+  namespace: blog
+  labels: { app.kubernetes.io/name: postgres, app.kubernetes.io/part-of: blog }
+spec:
+  serviceName: postgres
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: postgres }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: postgres, app.kubernetes.io/part-of: blog }
+    spec:
+      # sem as variaveis que o kubernetes injeta para cada Service do namespace
+      # (RABBITMQ_PORT=tcp://10.96.x.x:5672, POSTGRES_PORT=...). a descoberta aqui e por
+      # dns, e essas variaveis colidiam com as do config server: ${RABBITMQ_PORT:5672}
+      # virava "tcp://..." e o servico nao subia. achado na primeira implantacao no kind.
+      enableServiceLinks: false
+      containers:
+        - name: postgres
+          image: postgres:16-alpine
+          ports:
+            - { name: postgres, containerPort: 5432 }
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom: { secretKeyRef: { name: blog-segredos, key: POSTGRES_PASSWORD } }
+            - name: BLOG_DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: blog-segredos, key: BLOG_DB_PASSWORD } }
+            - name: ENGAGEMENT_DB_PASSWORD
+              valueFrom: { secretKeyRef: { name: blog-segredos, key: ENGAGEMENT_DB_PASSWORD } }
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          volumeMounts:
+            - { name: dados, mountPath: /var/lib/postgresql/data }
+            - { name: init, mountPath: /docker-entrypoint-initdb.d, readOnly: true }
+          readinessProbe:
+            exec: { command: ["pg_isready", "-U", "postgres"] }
+            periodSeconds: 5
+          livenessProbe:
+            exec: { command: ["pg_isready", "-U", "postgres"] }
+            periodSeconds: 15
+            failureThreshold: 4
+          resources:
+            requests: { cpu: 50m, memory: 128Mi }
+            limits: { memory: 256Mi }
+      volumes:
+        - name: init
+          configMap: { name: postgres-init, defaultMode: 0755 }
+  volumeClaimTemplates:
+    - metadata:
+        name: dados
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests: { storage: 1Gi }

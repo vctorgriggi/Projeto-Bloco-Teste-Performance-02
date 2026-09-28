@@ -6,6 +6,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.amqp.AmqpException;
 import org.springframework.amqp.rabbit.core.RabbitTemplate;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.event.TransactionPhase;
 import org.springframework.transaction.event.TransactionalEventListener;
@@ -25,6 +26,13 @@ import static com.blog.engagement.messaging.Topology.ENGAGEMENT_EXCHANGE;
 // mereceu outbox no monolito; um contador que se refaz, nao. se o broker estiver fora,
 // o comentario continua gravado e a falha vai para o log -- a conversa nao fica refem
 // da mensageria.
+//
+// e a publicacao sai de outra thread (@Async, quinta entrega). na thread da requisicao,
+// um broker fora do ar custava o timeout de conexao a quem reagiu: medido no
+// kubernetes, onde o Service do rabbitmq existe sem pods e a conexao espera em vez de ser
+// recusada, a reacao era gravada e o leitor recebia 503 em 3,9s -- tentava de novo e
+// levava 409. assincrona, a resposta nao espera o broker. a ordem entre duas publicacoes
+// pode trocar, e isso ja era tolerado: o consumidor aplica "o mais recente vence".
 @Component
 public class EngagementEventPublisher {
 
@@ -36,6 +44,7 @@ public class EngagementEventPublisher {
         this.rabbitTemplate = rabbitTemplate;
     }
 
+    @Async(PublicacaoAssincronaConfig.EXECUTOR)
     @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT, fallbackExecution = true)
     public void onEngagementChanged(EngagementChanged change) {
         publish(change);

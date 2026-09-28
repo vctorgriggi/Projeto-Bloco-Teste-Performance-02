@@ -1,0 +1,135 @@
+# o coletor opentelemetry da stack lgtm, com um acrescimo: o descarte de ruido.
+#
+# e a configuracao que vem na imagem grafana/otel-lgtm (0.34.0), copiada, com um
+# processador a mais no pipeline de traces. o resto -- para onde vao traces, metricas e
+# logs dentro do conteiner -- e o original. montado por cima do arquivo da imagem, no
+# compose e no kubernetes.
+#
+# por que filtrar aqui, e nao na aplicacao: o agente instrumenta tudo, e isso e o que se
+# quer -- ninguem sabe de antemao qual chamada vai precisar ser investigada. mas parte do
+# que ele registra e manutencao, e com a stack no ar os traces uteis sumiam no meio: o
+# relay do outbox varre a tabela a cada 2s, as sondas de saude batem a cada 10s, cada
+# servico renova o registro no eureka a cada 10s. cada uma dessas vira um trace, e
+# "apagar um post" ficava enterrado entre centenas de "OutboxRelayScheduler.relay".
+#
+# o descarte e decidido pela RAIZ do trace, e so por ela. uma chamada feign do monolito
+# ao engajamento tambem se chama "GET", e um trace de leitura de conversa nao pode sumir
+# por causa disso; o que se descarta e o trace que COMECA numa dessas tarefas.
+# e tail sampling porque a decisao olha o trace inteiro (espera todos os spans chegarem),
+# e nao so o primeiro span.
+# ---------------------------------------------------------------------------------
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+        cors:
+          allowed_origins:
+            - http://*
+  prometheus/collector:
+    config:
+      scrape_configs:
+        - job_name: "opentelemetry-collector"
+          scrape_interval: 1s
+          static_configs:
+            - targets: ["127.0.0.1:8888"]
+
+  # a profundidade de cada fila, lida do plugin prometheus do rabbitmq (ligado por padrao
+  # na imagem, porta 15692). e a metrica que mais importa numa arquitetura orientada a
+  # eventos: uma fila que so cresce e um consumidor parado; uma .dlq com mensagens e algo
+  # que precisa de alguem olhando. o nome "rabbitmq" resolve no compose e no kubernetes.
+  prometheus/rabbitmq:
+    config:
+      scrape_configs:
+        - job_name: rabbitmq
+          scrape_interval: 15s
+          metrics_path: /metrics/detailed
+          params:
+            family: [queue_coarse_metrics]
+          static_configs:
+            - targets: ["rabbitmq:15692"]
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+    path: "/ready"
+
+processors:
+  batch:
+
+  tail_sampling/sem-ruido:
+    decision_wait: 10s
+    policies:
+      - name: descarta-manutencao
+        type: drop
+        drop:
+          drop_sub_policy:
+            - name: raiz-e-manutencao
+              type: ottl_condition
+              ottl_condition:
+                error_mode: ignore
+                span:
+                  # varredura do relay do outbox. a publicacao em si nao se perde: ela
+                  # acontece no contexto do trace de quem gravou a mensagem (OutboxRelay)
+                  - 'IsRootSpan() and name == "OutboxRelayScheduler.relay"'
+                  # sondas de saude do compose e do kubernetes
+                  - 'IsRootSpan() and IsMatch(name, "^GET /actuator/health")'
+                  # heartbeat e busca do registro: chamadas http de fundo, sem requisicao
+                  # de usuario na origem, dos dois lados (cliente e servidor eureka)
+                  - 'IsRootSpan() and kind == SPAN_KIND_CLIENT'
+                  - 'IsRootSpan() and IsMatch(name, "/eureka/")'
+                  # a leitura periodica do gauge de eventos pendentes no outbox
+                  - 'IsRootSpan() and name == "OutboxRepository.countByPublishedAtIsNull"'
+                  # confirmacoes de protocolo do cliente amqp fora de qualquer trace
+                  - 'IsRootSpan() and IsMatch(name, "^basic\\.")'
+      - name: mantem-o-resto
+        type: always_sample
+
+exporters:
+  otlp_http/metrics:
+    endpoint: http://127.0.0.1:9090/api/v1/otlp
+    tls:
+      insecure: true
+  otlp_http/traces:
+    endpoint: http://127.0.0.1:4418
+    tls:
+      insecure: true
+  otlp_http/logs:
+    endpoint: http://127.0.0.1:3100/otlp
+    tls:
+      insecure: true
+  otlp_grpc/profiles:
+    endpoint: http://127.0.0.1:4040
+    tls:
+      insecure: true
+  debug/metrics:
+    verbosity: detailed
+  debug/traces:
+    verbosity: detailed
+  debug/logs:
+    verbosity: detailed
+
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [tail_sampling/sem-ruido, batch]
+      exporters: [otlp_http/traces]
+      #exporters: [otlp_http/traces,debug/traces]
+    metrics:
+      receivers: [otlp, prometheus/collector, prometheus/rabbitmq]
+      processors: [batch]
+      exporters: [otlp_http/metrics]
+      #exporters: [otlp_http/metrics,debug/metrics]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp_http/logs]
+      #exporters: [otlp_http/logs,debug/logs]
+    profiles:
+      receivers: [otlp]
+      exporters: [otlp_grpc/profiles]

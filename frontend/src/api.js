@@ -6,8 +6,12 @@
 // fala com ele direto -- o monolito e a porta de entrada e alcanca o engajamento por
 // dentro. do lado do front, portanto, nada de descoberta de servico, segunda origem
 // ou segundo cors.
+//
+// desde a quinta entrega a base e relativa (/api): a mesma construcao do front serve
+// em qualquer endereco. em desenvolvimento, o vite repassa /api ao monolito (veja
+// vite.config.js); no conteiner, e o nginx que repassa. o navegador so ve uma origem.
 
-const BASE_URL = 'http://localhost:8080/api'
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || '/api'
 
 async function request(path, options = {}) {
   const response = await fetch(`${BASE_URL}${path}`, {

@@ -100,6 +100,29 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- implantacao, quinta entrega -->
+
+        <!-- postgresql: o banco do ambiente de conteiner. o h2 em memoria continua sendo
+             o do desenvolvimento e dos testes, mas nao serve para producao: zera a cada
+             restart e, com duas replicas, cada uma teria o seu banco. -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- migracoes versionadas do schema. em producao o schema nao e gerado pelo
+             hibernate: e criado por scripts revisaveis, e o hibernate so confere se o
+             mapeamento bate (ddl-auto: validate). ligado apenas no perfil container. -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
+        </dependency>
+
         <dependency>
             <groupId>org.projectlombok</groupId>
             <artifactId>lombok</artifactId>
@@ -146,6 +169,27 @@
 
     <build>
         <plugins>
+            <!-- cobertura de testes: o relatorio sai em target/site/jacoco a cada
+                 ./mvnw verify, e o pipeline o publica como artefato -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.12</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>

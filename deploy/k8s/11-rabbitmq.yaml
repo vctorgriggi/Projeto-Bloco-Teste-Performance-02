@@ -1,0 +1,94 @@
+# o broker. StatefulSet pelo mesmo motivo do postgres: as filas sao duraveis e as
+# mensagens persistentes, e isso so vale se o disco sobreviver ao pod. o nome do no do
+# rabbitmq depende do hostname, que num StatefulSet e estavel (rabbitmq-0).
+#
+# nenhuma fila e declarada aqui: os servicos declaram a topologia quando conectam. em
+# producao, o rabbitmq cluster operator, com tres nos e filas quorum.
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq
+  namespace: blog
+  labels: { app.kubernetes.io/name: rabbitmq, app.kubernetes.io/part-of: blog }
+spec:
+  selector: { app.kubernetes.io/name: rabbitmq }
+  ports:
+    - { name: amqp, port: 5672 }
+    - { name: prometheus, port: 15692 }   # metricas das filas, lidas pelo coletor
+    - { name: painel, port: 15672 }
+---
+# o painel, aberto para o navegador
+apiVersion: v1
+kind: Service
+metadata:
+  name: rabbitmq-painel
+  namespace: blog
+  labels: { app.kubernetes.io/name: rabbitmq, app.kubernetes.io/part-of: blog }
+spec:
+  type: NodePort
+  selector: { app.kubernetes.io/name: rabbitmq }
+  ports:
+    - { name: painel, port: 15672, nodePort: 31567 }
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: rabbitmq
+  namespace: blog
+  labels: { app.kubernetes.io/name: rabbitmq, app.kubernetes.io/part-of: blog }
+spec:
+  serviceName: rabbitmq
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: rabbitmq }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: rabbitmq, app.kubernetes.io/part-of: blog }
+    spec:
+      # sem as variaveis que o kubernetes injeta para cada Service do namespace
+      # (RABBITMQ_PORT=tcp://10.96.x.x:5672, POSTGRES_PORT=...). a descoberta aqui e por
+      # dns, e essas variaveis colidiam com as do config server: ${RABBITMQ_PORT:5672}
+      # virava "tcp://..." e o servico nao subia. achado na primeira implantacao no kind.
+      enableServiceLinks: false
+      # o conteiner inteiro roda como o usuario rabbitmq (999), sondas incluidas. sem isto,
+      # medido: na primeira subida com volume novo, a sonda (rabbitmq-diagnostics, como
+      # root) rodava antes do servidor e criava o .erlang.cookie como root; o servidor,
+      # como rabbitmq, nao conseguia le-lo e morria (eacces), e so o reinicio consertava.
+      # o fsGroup deixa o volume gravavel para esse usuario.
+      securityContext:
+        runAsUser: 999
+        runAsGroup: 999
+        fsGroup: 999
+      containers:
+        - name: rabbitmq
+          image: rabbitmq:3.13-management
+          ports:
+            - { name: amqp, containerPort: 5672 }
+            - { name: painel, containerPort: 15672 }
+            - { name: prometheus, containerPort: 15692 }
+          env:
+            - name: RABBITMQ_DEFAULT_USER
+              valueFrom: { secretKeyRef: { name: blog-segredos, key: RABBITMQ_USERNAME } }
+            - name: RABBITMQ_DEFAULT_PASS
+              valueFrom: { secretKeyRef: { name: blog-segredos, key: RABBITMQ_PASSWORD } }
+          volumeMounts:
+            - { name: dados, mountPath: /var/lib/rabbitmq }
+          readinessProbe:
+            exec: { command: ["rabbitmq-diagnostics", "-q", "ping"] }
+            periodSeconds: 10
+            timeoutSeconds: 8
+          livenessProbe:
+            exec: { command: ["rabbitmq-diagnostics", "-q", "status"] }
+            initialDelaySeconds: 60
+            periodSeconds: 30
+            timeoutSeconds: 15
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { memory: 512Mi }
+  volumeClaimTemplates:
+    - metadata:
+        name: dados
+      spec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests: { storage: 1Gi }

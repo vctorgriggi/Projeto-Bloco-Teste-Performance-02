@@ -1,0 +1,84 @@
+# o registro de servicos. no kubernetes ele e, a rigor, redundante: o proprio cluster
+# ja tem descoberta (Services e dns). ficou porque e parte da arquitetura da terceira
+# entrega, e porque continua sendo o que o monolito usa para achar -- e balancear entre
+# -- as replicas do engajamento. a troca natural seria o spring cloud kubernetes, que
+# le os Endpoints do cluster no lugar do eureka; esta em docs/IMPLANTACAO.md.
+apiVersion: v1
+kind: Service
+metadata:
+  name: discovery-server
+  namespace: blog
+  labels: { app.kubernetes.io/name: discovery-server, app.kubernetes.io/part-of: blog }
+spec:
+  type: NodePort
+  selector: { app.kubernetes.io/name: discovery-server }
+  ports:
+    - { name: http, port: 8761, targetPort: http, nodePort: 30761 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: discovery-server
+  namespace: blog
+  labels: { app.kubernetes.io/name: discovery-server, app.kubernetes.io/part-of: blog }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: discovery-server }
+  # troca de versao sem queda: sobe o pod novo, espera ele ficar pronto (readiness) e so
+  # entao derruba um antigo
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: discovery-server, app.kubernetes.io/part-of: blog }
+    spec:
+      # sem as variaveis que o kubernetes injeta para cada Service do namespace
+      # (RABBITMQ_PORT=tcp://10.96.x.x:5672, POSTGRES_PORT=...). a descoberta aqui e por
+      # dns, e essas variaveis colidiam com as do config server: ${RABBITMQ_PORT:5672}
+      # virava "tcp://..." e o servico nao subia. achado na primeira implantacao no kind.
+      enableServiceLinks: false
+      # o spring encerra com graca (termina as requisicoes e mensagens em andamento)
+      # dentro deste prazo, depois do SIGTERM
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: discovery-server
+          image: blog/discovery-server:dev
+          imagePullPolicy: IfNotPresent
+          ports:
+            - { name: http, containerPort: 8761 }
+          env:
+            # o nome do pod vira atributo de cada trace, log e metrica: e o que separa as
+            # duas replicas do engajamento no grafana
+            - name: POD_NAME
+              valueFrom: { fieldRef: { fieldPath: metadata.name } }
+            - name: OTEL_RESOURCE_ATTRIBUTES
+              value: deployment.environment=kubernetes,k8s.namespace.name=blog,k8s.pod.name=$(POD_NAME)
+            - name: OTEL_EXPORTER_OTLP_ENDPOINT
+              value: http://lgtm:4318
+          # startup: a jvm com o agente leva uns 20-40s para subir; durante esse tempo as
+          # outras sondas nao rodam, e o pod nao e morto por estar "lento"
+          startupProbe:
+            httpGet: { path: /actuator/health/liveness, port: http }
+            periodSeconds: 5
+            failureThreshold: 36
+          # liveness: o processo travou? o kubernetes reinicia o conteiner
+          livenessProbe:
+            httpGet: { path: /actuator/health/liveness, port: http }
+            periodSeconds: 15
+            failureThreshold: 3
+          # readiness: pode receber trafego? se nao, sai do Service ate voltar
+          readinessProbe:
+            httpGet: { path: /actuator/health/readiness, port: http }
+            periodSeconds: 5
+            failureThreshold: 3
+          resources:
+            # o request de cpu e a base do autoescalonamento (hpa) e da distribuicao
+            # pelos nos; o limite de memoria e o que a jvm usa para dimensionar o heap
+            # (MaxRAMPercentage=75 na imagem). sem limite de cpu de proposito: limitar
+            # cpu de jvm causa throttling em rajadas, como no startup.
+            requests: { cpu: 50m, memory: 256Mi }
+            limits: { memory: 512Mi }

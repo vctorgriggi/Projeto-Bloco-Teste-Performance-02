@@ -1,0 +1,84 @@
+# a stack lgtm num pod: coletor opentelemetry, loki, tempo, prometheus e grafana. a
+# mesma imagem e a mesma configuracao do compose -- o coletor com o descarte de ruido e o
+# dashboard do blog, virados ConfigMap pelo kustomize a partir de deploy/otel e
+# deploy/grafana.
+#
+# o armazenamento e emptyDir: os dados vivem enquanto o pod viver. para um ambiente
+# simulado basta; em producao cada peca seria um servico proprio (loki, tempo e mimir
+# com armazenamento de objetos), ou um servico gerenciado (grafana cloud).
+apiVersion: v1
+kind: Service
+metadata:
+  name: lgtm
+  namespace: blog
+  labels: { app.kubernetes.io/name: lgtm, app.kubernetes.io/part-of: blog }
+spec:
+  selector: { app.kubernetes.io/name: lgtm }
+  ports:
+    - { name: otlp-http, port: 4318 }
+    - { name: otlp-grpc, port: 4317 }
+    - { name: grafana, port: 3000 }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: grafana
+  namespace: blog
+  labels: { app.kubernetes.io/name: lgtm, app.kubernetes.io/part-of: blog }
+spec:
+  type: NodePort
+  selector: { app.kubernetes.io/name: lgtm }
+  ports:
+    - { name: grafana, port: 3000, nodePort: 30300 }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: lgtm
+  namespace: blog
+  labels: { app.kubernetes.io/name: lgtm, app.kubernetes.io/part-of: blog }
+spec:
+  replicas: 1
+  selector:
+    matchLabels: { app.kubernetes.io/name: lgtm }
+  template:
+    metadata:
+      labels: { app.kubernetes.io/name: lgtm, app.kubernetes.io/part-of: blog }
+    spec:
+      # sem as variaveis que o kubernetes injeta para cada Service do namespace
+      # (RABBITMQ_PORT=tcp://10.96.x.x:5672, POSTGRES_PORT=...). a descoberta aqui e por
+      # dns, e essas variaveis colidiam com as do config server: ${RABBITMQ_PORT:5672}
+      # virava "tcp://..." e o servico nao subia. achado na primeira implantacao no kind.
+      enableServiceLinks: false
+      containers:
+        - name: lgtm
+          image: grafana/otel-lgtm:0.34.0
+          ports:
+            - { name: grafana, containerPort: 3000 }
+            - { name: otlp-grpc, containerPort: 4317 }
+            - { name: otlp-http, containerPort: 4318 }
+          env:
+            - name: GF_SECURITY_ADMIN_PASSWORD
+              valueFrom: { secretKeyRef: { name: blog-segredos, key: GRAFANA_ADMIN_PASSWORD } }
+          volumeMounts:
+            - { name: dados, mountPath: /data }
+            - { name: coletor, mountPath: /otel-lgtm/otelcol-config.yaml, subPath: otelcol-config.yaml }
+            - { name: dashboards, mountPath: /otel-lgtm/blog-dashboards }
+            - name: dashboards-provisionamento
+              mountPath: /otel-lgtm/grafana/conf/provisioning/dashboards/blog-dashboards.yaml
+              subPath: blog-dashboards.yaml
+          readinessProbe:
+            httpGet: { path: /api/health, port: grafana }
+            periodSeconds: 10
+          resources:
+            requests: { cpu: 200m, memory: 768Mi }
+            limits: { memory: 1536Mi }
+      volumes:
+        - name: dados
+          emptyDir: {}
+        - name: coletor
+          configMap: { name: otel-coletor }
+        - name: dashboards
+          configMap: { name: grafana-dashboards }
+        - name: dashboards-provisionamento
+          configMap: { name: grafana-provisionamento }

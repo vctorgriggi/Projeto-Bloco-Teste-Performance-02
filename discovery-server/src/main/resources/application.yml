@@ -24,6 +24,11 @@ eureka:
     # assim, ao parar o microsservico, o painel reflete a queda rapido.
     enable-self-preservation: false
     eviction-interval-timer-in-ms: 5000
+    # o servidor responde a tabela de instancias de um cache atualizado a cada 30s. com
+    # isso, uma instancia marcada DOWN continuava aparecendo UP para os clientes por ate
+    # meio minuto. 3s e o que permite a troca de versao no kubernetes sem 503 (quinta
+    # entrega; o raciocinio completo esta em docs/IMPLANTACAO.md).
+    response-cache-update-interval-ms: 3000
 
 logging:
   level:

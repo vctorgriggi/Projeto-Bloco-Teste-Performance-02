@@ -1,0 +1,27 @@
+# ---------------------------------------------------------------------------------
+# o ambiente de conteiner (docker compose e kubernetes), para TODOS os clientes.
+# ativado quando o servico sobe com SPRING_PROFILES_ACTIVE=container: o config server
+# entrega este arquivo por cima do application.yml.
+#
+# e o uso para o qual os perfis do spring cloud config existem: o mesmo servico, o
+# mesmo jar, e so o ambiente muda. em desenvolvimento os enderecos sao localhost; aqui
+# sao os nomes dos servicos na rede do compose e no dns do kubernetes, que foram
+# escolhidos iguais de proposito, para um arquivo servir os dois.
+#
+# os ${...} nao sao resolvidos aqui: o config server os entrega como texto, e quem os
+# resolve e o cliente, contra as variaveis de ambiente DELE. e isso que permite a senha
+# do broker vir de um secret do kubernetes sem nunca passar por este repositorio -- o
+# valor depois dos dois-pontos e so o padrao do ambiente de demonstracao.
+# ---------------------------------------------------------------------------------
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URL:http://discovery-server:8761/eureka/}
+
+spring:
+  rabbitmq:
+    host: ${RABBITMQ_HOST:rabbitmq}
+    port: ${RABBITMQ_PORT:5672}
+    username: ${RABBITMQ_USERNAME:guest}
+    password: ${RABBITMQ_PASSWORD:guest}

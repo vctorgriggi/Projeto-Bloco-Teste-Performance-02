@@ -1,0 +1,58 @@
+# a implantacao do blog no kubernetes: kubectl apply -k deploy/
+#
+# o kustomize fica aqui, e nao dentro de deploy/k8s, porque ele so le arquivos abaixo da
+# pasta da kustomization -- e os arquivos compartilhados com o docker compose (o script
+# do postgres, a configuracao do coletor, o dashboard) moram em deploy/. um arquivo, dois
+# ambientes: o compose monta esses arquivos como volume; aqui eles viram ConfigMaps.
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: blog
+
+labels:
+  - pairs:
+      app.kubernetes.io/managed-by: kustomize
+    includeSelectors: false
+
+resources:
+  - k8s/00-namespace.yaml
+  - k8s/01-segredos.yaml
+  - k8s/10-postgres.yaml
+  - k8s/11-rabbitmq.yaml
+  - k8s/12-observabilidade.yaml
+  - k8s/20-config-java.yaml
+  - k8s/30-config-server.yaml
+  - k8s/31-discovery-server.yaml
+  - k8s/40-engagement-service.yaml
+  - k8s/41-blog-api.yaml
+  - k8s/50-frontend.yaml
+
+configMapGenerator:
+  - name: postgres-init
+    files:
+      - postgres/01-bancos.sh
+  - name: otel-coletor
+    files:
+      - otel/otelcol-config.yaml
+  - name: grafana-dashboards
+    files:
+      - grafana/dashboards/blog-operacao.json
+  - name: grafana-provisionamento
+    files:
+      - grafana/blog-dashboards.yaml
+
+# as imagens construidas localmente (docker compose build) e carregadas no kind. o
+# pipeline publica as mesmas imagens no ghcr com o sha do commit e, no job "publicar",
+# troca estes nomes pelos do registro (kustomize edit set image) e gera o manifesto
+# final daquela versao -- que e o que se aplicaria num cluster de verdade.
+images:
+  - name: blog/config-server
+    newTag: dev
+  - name: blog/discovery-server
+    newTag: dev
+  - name: blog/engagement-service
+    newTag: dev
+  - name: blog/blog-api
+    newTag: dev
+  - name: blog/frontend
+    newTag: dev

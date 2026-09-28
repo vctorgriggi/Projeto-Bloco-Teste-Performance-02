@@ -41,6 +41,12 @@ spring:
       enabled: true
       path: /h2-console
 
+  # as migracoes do flyway existem para o postgres do ambiente de conteiner, e so rodam
+  # la (perfil container, no fim deste arquivo). aqui, com h2 em memoria, o schema
+  # continua vindo das entidades (ddl-auto), como nas entregas anteriores.
+  flyway:
+    enabled: false
+
   # mensageria. o endereco do broker, as retentativas e o intervalo do outbox sao ajuste
   # de ambiente e vem do config server; o que fica aqui sao as decisoes de codigo.
   rabbitmq:
@@ -68,6 +74,57 @@ server:
 engagement:
   service:
     url: ""
+
+---
+# ---------------------------------------------------------------------------------
+# o ambiente de conteiner (docker compose e kubernetes), ativado por
+# SPRING_PROFILES_ACTIVE=container. quinta entrega.
+#
+# o mesmo criterio da configuracao central vale aqui: o que e ENDERECO ou CREDENCIAL do
+# ambiente (a url do postgres, o host do broker, o registro) vem do config server, nos
+# arquivos *-container.yml; o que e DECISAO de como o codigo se comporta em producao
+# fica neste documento, junto do servico:
+#
+# - o schema vem das migracoes do flyway (src/main/resources/db/migration), e o
+#   hibernate so confere se o mapeamento bate com ele. gerar schema a partir das
+#   entidades e conveniente em desenvolvimento e perigoso em producao: uma mudanca de
+#   entidade viraria, sem revisao, um alter table no banco de verdade.
+# - sem sql no log e sem console do banco exposto.
+# - as sondas de liveness e readiness no actuator, que o kubernetes e o compose usam
+#   para saber se o processo esta vivo e pronto para trafego.
+# - o id de trace e de span em cada linha de log. quem os coloca no MDC e o agente do
+#   opentelemetry que as imagens carregam; e o que permite ir de uma linha de log ao
+#   trace completo no grafana, e voltar.
+# ---------------------------------------------------------------------------------
+spring:
+  config:
+    activate:
+      on-profile: container
+
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: false
+
+  flyway:
+    enabled: true
+
+  h2:
+    console:
+      enabled: false
+
+management:
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  pattern:
+    level: "%5p [%X{trace_id:-},%X{span_id:-}]"
 
 ---
 # ---------------------------------------------------------------------------------

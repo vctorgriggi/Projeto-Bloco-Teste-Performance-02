@@ -1,0 +1,325 @@
+# integracao e entrega continuas do blog.
+#
+# a cada push e pull request, o pipeline responde a mesma pergunta, em camadas cada vez
+# mais proximas da producao: "isto pode ir para o ar?"
+#
+#   testes            cada servico sozinho: unidade, integracao (com rabbitmq real via
+#                     testcontainers) e cobertura; e o front
+#   validacao         o que nao e codigo mas quebra a implantacao: manifestos do
+#                     kubernetes contra o schema, o compose, este proprio workflow
+#   imagens           uma imagem por servico, a mesma que vai para producao
+#   e2e-kubernetes    o sistema inteiro implantado num cluster kind efemero, com o teste
+#                     de ponta a ponta -- inclusive traces e logs chegando ao grafana
+#   publicar          (so na main e em tags) imagens no ghcr, marcadas com o sha, e o
+#                     manifesto daquela versao, com as imagens fixadas
+#   implantar         (so se houver um cluster configurado) aplica esse manifesto
+#
+# cada camada so roda se a anterior passou. o que chega ao ghcr ja subiu num kubernetes e
+# passou pelo e2e.
+
+name: pipeline
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+# um push novo na mesma branch cancela o pipeline anterior, que ja ficou velho
+concurrency:
+  group: pipeline-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  REGISTRO: ghcr.io/${{ github.repository_owner }}
+
+jobs:
+
+  # ---------------------------------------------------------------------------------
+  testes-java:
+    name: testes (${{ matrix.servico }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        servico: [config-server, discovery-server, backend, engagement-service]
+    defaults:
+      run:
+        working-directory: ${{ matrix.servico }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: maven
+          cache-dependency-path: ${{ matrix.servico }}/pom.xml
+
+      # verify roda os testes e gera o relatorio de cobertura (jacoco). os testes de
+      # integracao com rabbitmq real rodam aqui: o runner tem docker, e o testcontainers
+      # sobe o broker sozinho
+      - name: testes e cobertura
+        run: ./mvnw -B -ntp verify
+
+      - name: resumo da cobertura
+        if: always()
+        run: |
+          csv=target/site/jacoco/jacoco.csv
+          [ -f "$csv" ] || exit 0
+          awk -F, 'NR>1 { lm+=$8; lc+=$9; bm+=$6; bc+=$7 }
+            END {
+              printf "### cobertura: %s\n\n| linhas | desvios |\n| --- | --- |\n", ENVIRON["SERVICO"];
+              printf "| %.1f%% (%d de %d) | %.1f%% (%d de %d) |\n",
+                100*lc/(lc+lm), lc, lc+lm, (bc+bm ? 100*bc/(bc+bm) : 0), bc, bc+bm
+            }' "$csv" >> "$GITHUB_STEP_SUMMARY"
+        env:
+          SERVICO: ${{ matrix.servico }}
+
+      - name: relatorios
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: relatorios-${{ matrix.servico }}
+          path: |
+            ${{ matrix.servico }}/target/surefire-reports/
+            ${{ matrix.servico }}/target/site/jacoco/
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------------
+  testes-frontend:
+    name: testes (frontend)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - name: testes de componente (vitest)
+        run: npm test
+      - name: build de producao
+        run: npm run build
+
+  # ---------------------------------------------------------------------------------
+  validacao:
+    name: validacao (manifestos, compose, workflow)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      # os manifestos renderizados pelo kustomize, contra o schema da api do kubernetes.
+      # um campo com nome errado passa pelo yaml e so falharia na hora de aplicar
+      - name: manifestos do kubernetes (kubeconform)
+        run: |
+          kubectl kustomize deploy/ | docker run --rm -i ghcr.io/yannh/kubeconform:v0.7.0 \
+            -strict -summary -kubernetes-version 1.33.0 -
+
+      - name: docker compose
+        run: docker compose --profile completo config --quiet
+
+      - name: este workflow (actionlint)
+        run: |
+          docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.7 -color
+
+  # ---------------------------------------------------------------------------------
+  # uma imagem por servico, em paralelo. o resultado vai como artefato para o job de e2e,
+  # que carrega as cinco no cluster: e a imagem testada que segue adiante
+  imagens:
+    name: imagem (${{ matrix.servico.nome }})
+    needs: [testes-java, testes-frontend, validacao]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      matrix:
+        servico:
+          - { nome: config-server, dir: config-server }
+          - { nome: discovery-server, dir: discovery-server }
+          - { nome: engagement-service, dir: engagement-service }
+          - { nome: blog-api, dir: backend }
+          - { nome: frontend, dir: frontend }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - name: build
+        uses: docker/build-push-action@v7
+        with:
+          context: ${{ matrix.servico.dir }}
+          tags: blog/${{ matrix.servico.nome }}:dev
+          outputs: type=docker,dest=${{ runner.temp }}/${{ matrix.servico.nome }}.tar
+          cache-from: type=gha,scope=${{ matrix.servico.nome }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.servico.nome }}
+      - uses: actions/upload-artifact@v7
+        with:
+          name: imagem-${{ matrix.servico.nome }}
+          path: ${{ runner.temp }}/${{ matrix.servico.nome }}.tar
+          retention-days: 1
+
+  # ---------------------------------------------------------------------------------
+  # o ambiente simulado de producao, criado e destruido a cada execucao: um cluster kind
+  # com a mesma implantacao da demonstracao (scripts/k8s-subir.sh), e o teste de ponta a
+  # ponta contra ela
+  e2e-kubernetes:
+    name: e2e no kubernetes (kind)
+    needs: [imagens]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          pattern: imagem-*
+          path: ${{ runner.temp }}/imagens
+          merge-multiple: true
+
+      - name: carregar imagens
+        run: for tar in "$RUNNER_TEMP"/imagens/*.tar; do docker load -i "$tar"; done
+
+      - name: cluster kind
+        uses: helm/kind-action@v1.15.0
+        with:
+          cluster_name: blog
+          config: deploy/kind/cluster.yaml
+          wait: 120s
+
+      - name: implantar
+        run: scripts/k8s-subir.sh --sem-build
+
+      - name: teste de ponta a ponta
+        env:
+          GRAFANA_URL: http://localhost:30300
+        run: scripts/e2e.sh http://localhost:30080
+
+      # quando algo falha, o que estava acontecendo no cluster e o que mais ajuda
+      - name: diagnostico
+        if: failure()
+        run: |
+          kubectl -n blog get pods -o wide
+          kubectl -n blog get events --sort-by=.lastTimestamp | tail -60
+          for d in config-server discovery-server engagement-service blog-api; do
+            echo "::group::logs $d"; kubectl -n blog logs deploy/$d --all-containers --tail=200 || true; echo "::endgroup::"
+          done
+
+  # ---------------------------------------------------------------------------------
+  # entrega: as imagens que passaram por tudo acima vao para o github container
+  # registry, marcadas com o sha do commit (e com a versao, numa tag v*). o manifesto
+  # daquela versao sai junto, com as imagens fixadas pelo sha -- e o que se aplicaria
+  # num cluster de verdade, e fica anexado ao pipeline (e a release, numa tag).
+  publicar:
+    name: publicar (${{ matrix.servico.nome }})
+    if: github.event_name == 'push'
+    needs: [e2e-kubernetes]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      matrix:
+        servico:
+          - { nome: config-server, dir: config-server }
+          - { nome: discovery-server, dir: discovery-server }
+          - { nome: engagement-service, dir: engagement-service }
+          - { nome: blog-api, dir: backend }
+          - { nome: frontend, dir: frontend }
+    steps:
+      - uses: actions/checkout@v7
+      - uses: docker/setup-buildx-action@v4
+      - uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.REGISTRO }}/blog-${{ matrix.servico.nome }}
+          tags: |
+            type=sha,format=long,prefix=
+            type=semver,pattern={{version}}
+            type=raw,value=latest,enable={{is_default_branch}}
+      # mesmo contexto e mesmo cache do job "imagens": as camadas ja existem, e o build
+      # aqui e praticamente so o push
+      - uses: docker/build-push-action@v7
+        with:
+          context: ${{ matrix.servico.dir }}
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha,scope=${{ matrix.servico.nome }}
+
+  manifesto:
+    name: manifesto da versao
+    if: github.event_name == 'push'
+    needs: [publicar]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write   # para criar a release numa tag
+    steps:
+      - uses: actions/checkout@v7
+      # o mesmo kustomize da implantacao local, com as imagens trocadas pelas do registro
+      # e fixadas no sha deste commit. baixar sempre (Always) garante que o no nao use
+      # uma copia antiga
+      - name: renderizar com as imagens do registro
+        run: |
+          kubectl kustomize deploy/ \
+            | sed -E "s#image: blog/([a-z-]+):dev#image: $REGISTRO/blog-\\1:$GITHUB_SHA#" \
+            | sed 's/imagePullPolicy: IfNotPresent/imagePullPolicy: Always/' \
+            > "$RUNNER_TEMP/blog-$GITHUB_SHA.yaml"
+          echo "imagens desta versao:"
+          grep -h 'image: ' "$RUNNER_TEMP/blog-$GITHUB_SHA.yaml" | sort -u
+      - uses: actions/upload-artifact@v7
+        with:
+          name: manifesto
+          path: ${{ runner.temp }}/blog-${{ github.sha }}.yaml
+      - name: release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v3
+        with:
+          files: ${{ runner.temp }}/blog-${{ github.sha }}.yaml
+          generate_release_notes: true
+
+  # ---------------------------------------------------------------------------------
+  # implantacao continua num cluster de verdade, quando existir um. o kubeconfig vem do
+  # secret KUBECONFIG_B64 do repositorio, e o ambiente "producao" do github pode exigir
+  # aprovacao manual antes deste job rodar. sem o secret, o job so avisa e termina: o
+  # ambiente simulado de producao e o do job e2e-kubernetes.
+  implantar:
+    name: implantar (producao)
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    needs: [manifesto]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: producao
+    steps:
+      - uses: actions/download-artifact@v8
+        with:
+          name: manifesto
+      - name: aplicar
+        env:
+          KUBECONFIG_B64: ${{ secrets.KUBECONFIG_B64 }}
+        run: |
+          if [ -z "$KUBECONFIG_B64" ]; then
+            echo "::notice::sem cluster configurado (secret KUBECONFIG_B64); o manifesto desta versao esta no artefato 'manifesto'"
+            exit 0
+          fi
+          echo "$KUBECONFIG_B64" | base64 -d > "$RUNNER_TEMP/kubeconfig"
+          export KUBECONFIG="$RUNNER_TEMP/kubeconfig"
+          kubectl apply -f "blog-$GITHUB_SHA.yaml"
+          for d in config-server discovery-server engagement-service blog-api frontend; do
+            kubectl -n blog rollout status "deployment/$d" --timeout=600s
+          done

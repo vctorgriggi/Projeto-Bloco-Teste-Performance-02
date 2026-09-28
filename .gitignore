@@ -17,3 +17,6 @@ dist/
 # logs dos processos subidos pelo ./subir.sh
 .logs/
 *.log
+
+# relatorios de cobertura e de testes do front
+coverage/

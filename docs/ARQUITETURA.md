@@ -2,7 +2,7 @@
 
 este documento explica como o blog foi construído. a ideia aqui é registrar as decisões e mostrar como o código está organizado de verdade, não uma versão idealizada.
 
-a solução cresceu em quatro etapas, e o documento acompanha essa ordem. a primeira entrega montou uma base em camadas e bounded contexts, dentro de um único processo. a segunda amadureceu a camada de persistência e adicionou histórico de dados — detalhado no final deste documento e, com profundidade, em [PERSISTENCIA.md](PERSISTENCIA.md). a terceira partiu o sistema: um dos contextos saiu do monólito e virou um microsserviço com processo, banco e deploy próprios, e os dois passaram a conversar por rede — detalhado em [MICROSSERVICO.md](MICROSSERVICO.md). a quarta tornou essa conversa orientada a eventos: onde quem chama não precisa da resposta para seguir, a chamada HTTP deu lugar a comandos e eventos num broker de mensagens (RabbitMQ). o que mudou está resumido no final e detalhado em [EVENTOS.md](EVENTOS.md).
+a solução cresceu em cinco etapas, e o documento acompanha essa ordem. a primeira entrega montou uma base em camadas e bounded contexts, dentro de um único processo. a segunda amadureceu a camada de persistência e adicionou histórico de dados — detalhado no final deste documento e, com profundidade, em [PERSISTENCIA.md](PERSISTENCIA.md). a terceira partiu o sistema: um dos contextos saiu do monólito e virou um microsserviço com processo, banco e deploy próprios, e os dois passaram a conversar por rede — detalhado em [MICROSSERVICO.md](MICROSSERVICO.md). a quarta tornou essa conversa orientada a eventos: onde quem chama não precisa da resposta para seguir, a chamada HTTP deu lugar a comandos e eventos num broker de mensagens (RabbitMQ). detalhado em [EVENTOS.md](EVENTOS.md). a quinta preparou tudo para operar em produção: imagens Docker, Kubernetes, PostgreSQL, observabilidade e um pipeline de CI/CD — resumido no final e detalhado em [IMPLANTACAO.md](IMPLANTACAO.md).
 
 o monólito descrito abaixo continua existindo e continua sendo o coração do sistema — ele guarda posts e autores e é a porta de entrada da API. o que ele deixou de ser é o único processo.
 
@@ -21,7 +21,7 @@ o sistema tem seis peças que rodam separadas:
 
 o registro, o config server e o broker são infraestrutura: não têm domínio nem banco. existem porque, com mais de um processo, aparecem perguntas que um monólito nunca precisou fazer — *onde está o outro serviço?*, *de onde vêm as propriedades dele?* e, desde a quarta entrega, *como avisar o outro serviço de algo sem depender de ele estar no ar agora?*
 
-cada serviço tem o seu próprio H2 em memória: `blogdb` no monólito, `engagementdb` no microsserviço. um banco por serviço é o que torna a separação real, e não apenas de código — não existe junção possível entre `posts` e `comments`. os bancos zeram a cada restart, o que é proposital: queremos algo que rode sem instalar nada. trocar por um banco real é mexer no `application.yml` de cada serviço, porque o acesso a dados passa todo pela camada de repositório.
+cada serviço tem o seu próprio banco: `blogdb` no monólito, `engagementdb` no microsserviço. um banco por serviço é o que torna a separação real, e não apenas de código — não existe junção possível entre `posts` e `comments`. em desenvolvimento, são H2 em memória, que zeram a cada restart, o que é proposital: queremos algo que rode sem instalar nada. em contêiner (quinta entrega), são dois bancos num PostgreSQL, cada um com o seu usuário, e o schema vem de migrações Flyway. a troca não tocou em nenhum service nem repositório — o acesso a dados passa todo pela camada de repositório, como a primeira entrega previa.
 
 ## por que um monólito em camadas
 
@@ -319,6 +319,16 @@ o critério foi uma pergunta só — *quem chama precisa da resposta para seguir
 
 a topologia é declarada pelos próprios serviços: exchanges topic para eventos, direct para comandos, um alternate exchange para eventos sem assinante e uma dead letter para cada fila. os padrões, os diagramas de fluxo, o que acontece quando cada peça cai, três defeitos que só apareceram com a stack no ar e o roteiro de demonstração estão em [EVENTOS.md](EVENTOS.md).
 
+## a quinta entrega: operação
+
+as quatro entregas anteriores construíram a arquitetura; a quinta a pôs para operar. cada serviço virou uma imagem Docker (multi-stage, sem root, com o agente OpenTelemetry), e o sistema roda inteiro em dois ambientes de produção simulados — um `docker compose` e um cluster Kubernetes —, com os mesmos nomes de serviço, o que permitiu ao config server ganhar um único perfil (`container`) para os dois.
+
+no Kubernetes, o que exigia mais do que "subir o contêiner" foi o que a arquitetura distribuída já tinha: a descoberta pelo Eureka tem caches, e a primeira troca de versão do engajamento derrubou 28% das leituras até que um `preStop` passasse a tirar a réplica do registro antes de encerrá-la. o engajamento escala de 2 a 4 réplicas por CPU, e as réplicas dividem as duas coisas que ele atende — as chamadas HTTP do monólito e as mensagens das filas.
+
+a operação ficou observável: o agente OpenTelemetry gera traces que atravessam HTTP, RabbitMQ e o outbox (o `traceparent` é guardado na linha e restaurado na publicação), logs com o id do trace, e métricas — inclusive a profundidade das filas e os eventos pendentes no outbox, que são os números que importam numa arquitetura orientada a eventos. tudo chega a uma stack Grafana (Loki, Tempo, Prometheus), com um dashboard do blog.
+
+e cada mudança passa por um pipeline no GitHub Actions que testa cada serviço, valida os manifestos, constrói as imagens, implanta tudo num cluster Kubernetes criado do zero e roda o teste de ponta a ponta — só então as imagens são publicadas. o detalhamento, os números medidos e os onze defeitos que só a implantação revelou estão em [IMPLANTACAO.md](IMPLANTACAO.md).
+
 ## resumo das decisões
 
 - começou monólito, mas já dividido por contexto e camada, pensando na evolução pra microsserviços — e a evolução aconteceu exatamente na linha desenhada
@@ -334,3 +344,7 @@ a topologia é declarada pelos próprios serviços: exchanges topic para eventos
 - outbox transacional para o fato que não pode se perder; confirmação do broker para o comando que não tem escrita local; melhor esforço para o dado derivado que se corrige sozinho — nem toda mensagem merece a mesma garantia
 - consumidores idempotentes, cada um com a estratégia que o seu dado permite, porque o broker entrega pelo menos uma vez
 - o contrato entre os serviços é o JSON da mensagem, e não uma classe compartilhada; a topologia é repetida em cada serviço, e uma divergência impede o serviço de subir
+- o mesmo jar em todo ambiente, e o ambiente num perfil do config server; senhas resolvidas no pod, nunca no repositório de configuração
+- schema de produção por migração versionada, e não gerado pelas entidades
+- observabilidade por agente, sem código de instrumentação; o que é ruído se descarta no coletor, não na aplicação
+- o que chega ao registro de imagens já subiu num Kubernetes e passou pelo teste de ponta a ponta

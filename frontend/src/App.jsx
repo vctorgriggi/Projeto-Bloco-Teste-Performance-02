@@ -41,7 +41,7 @@ export default function App() {
 
       <footer className="site-footer">
         <Squiggle className="footer-squiggle" />
-        <p>feito devagar, com cafe ~ projeto bloco, quarta entrega</p>
+        <p>feito devagar, com cafe ~ projeto bloco, quinta entrega</p>
       </footer>
     </div>
   )

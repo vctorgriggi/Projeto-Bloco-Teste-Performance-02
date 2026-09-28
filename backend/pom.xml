@@ -46,6 +46,14 @@
             <artifactId>spring-data-envers</artifactId>
         </dependency>
 
+        <!-- health checks: as sondas de liveness e readiness do kubernetes e o
+             healthcheck do docker compose perguntam aqui se o processo esta vivo e pronto
+             para receber trafego -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-actuator</artifactId>
+        </dependency>
+
         <!-- validacao de dto com bean validation -->
         <dependency>
             <groupId>org.springframework.boot</groupId>
@@ -107,11 +115,43 @@
             <artifactId>spring-boot-starter-amqp</artifactId>
         </dependency>
 
+        <!-- a api do opentelemetry, so a api (sem sdk): o outbox guarda o contexto do trace
+             de quem gravou a mensagem e o restaura na hora de publicar. sem o agente, ela e
+             um no-op; com o agente das imagens, o trace atravessa o outbox. a versao vem
+             do bom do spring boot. -->
+        <dependency>
+            <groupId>io.opentelemetry</groupId>
+            <artifactId>opentelemetry-api</artifactId>
+        </dependency>
+
         <!-- banco em memoria: posts e autores continuam neste servico -->
         <dependency>
             <groupId>com.h2database</groupId>
             <artifactId>h2</artifactId>
             <scope>runtime</scope>
+        </dependency>
+
+        <!-- implantacao, quinta entrega -->
+
+        <!-- postgresql: o banco do ambiente de conteiner. o h2 em memoria continua sendo
+             o do desenvolvimento e dos testes, mas nao serve para producao: zera a cada
+             restart e, com duas replicas, cada uma teria o seu banco. -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <scope>runtime</scope>
+        </dependency>
+
+        <!-- migracoes versionadas do schema. em producao o schema nao e gerado pelo
+             hibernate: e criado por scripts revisaveis, e o hibernate so confere se o
+             mapeamento bate (ddl-auto: validate). ligado apenas no perfil container. -->
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-core</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.flywaydb</groupId>
+            <artifactId>flyway-database-postgresql</artifactId>
         </dependency>
 
         <!-- reduz boilerplate de getters/construtores nas entidades -->
@@ -163,6 +203,27 @@
 
     <build>
         <plugins>
+            <!-- cobertura de testes: o relatorio sai em target/site/jacoco a cada
+                 ./mvnw verify, e o pipeline o publica como artefato -->
+            <plugin>
+                <groupId>org.jacoco</groupId>
+                <artifactId>jacoco-maven-plugin</artifactId>
+                <version>0.8.12</version>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>prepare-agent</goal>
+                        </goals>
+                    </execution>
+                    <execution>
+                        <id>report</id>
+                        <phase>verify</phase>
+                        <goals>
+                            <goal>report</goal>
+                        </goals>
+                    </execution>
+                </executions>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>

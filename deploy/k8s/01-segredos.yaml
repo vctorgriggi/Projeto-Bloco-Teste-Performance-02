@@ -1,0 +1,20 @@
+# as credenciais do ambiente. os valores abaixo sao os do ambiente de demonstracao, e
+# estao versionados so por isso: num cluster de verdade este arquivo nao existiria no
+# repositorio, e o Secret viria de um cofre (external-secrets, sealed-secrets, o
+# gerenciador do provedor de nuvem).
+#
+# os servicos leem daqui por variavel de ambiente, e o config server nunca ve os valores:
+# o perfil container entrega ${DB_PASSWORD:...} como texto, e quem resolve e o pod.
+apiVersion: v1
+kind: Secret
+metadata:
+  name: blog-segredos
+  namespace: blog
+type: Opaque
+stringData:
+  POSTGRES_PASSWORD: postgres-demo
+  BLOG_DB_PASSWORD: blog-demo
+  ENGAGEMENT_DB_PASSWORD: engagement-demo
+  RABBITMQ_USERNAME: blog
+  RABBITMQ_PASSWORD: rabbit-demo
+  GRAFANA_ADMIN_PASSWORD: admin

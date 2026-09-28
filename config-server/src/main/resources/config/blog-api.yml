@@ -16,9 +16,10 @@ eureka:
   client:
     # o padrao busca a tabela de instancias a cada 30s. subindo os processos juntos,
     # isso significa ate meio minuto em que o monolito ainda nao viu o engajamento e
-    # responde 503 -- correto, mas confuso de demonstrar. 10s deixa a subida e a
-    # recuperacao visiveis sem inundar o registro de requisicoes.
-    registry-fetch-interval-seconds: 10
+    # responde 503 -- correto, mas confuso de demonstrar. era 10s na terceira entrega;
+    # virou 5s na quinta, junto do cache do load balancer abaixo, para uma replica que
+    # sai numa atualizacao deixar de receber chamadas antes de morrer.
+    registry-fetch-interval-seconds: 5
 
 spring:
   # politica de consumo da fila dos contadores (mensageria, quarta entrega). mora aqui,
@@ -43,6 +44,14 @@ spring:
           max-interval: 5s
 
   cloud:
+    # o load balancer do spring cloud guarda a lista de instancias por 35s por padrao.
+    # somado ao cache do eureka, isso fazia o monolito continuar chamando uma replica do
+    # engajamento que ja tinha sido encerrada numa atualizacao: 28% de 503 durante um
+    # rollout no kubernetes, medido. com 5s aqui, 5s na busca do registro e o preStop do
+    # engajamento (k8s/40-engagement-service.yaml), a troca de versao nao derruba nada.
+    loadbalancer:
+      cache:
+        ttl: 5s
     openfeign:
       client:
         config:

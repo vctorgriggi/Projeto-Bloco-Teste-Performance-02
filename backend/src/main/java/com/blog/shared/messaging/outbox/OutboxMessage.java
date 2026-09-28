@@ -4,10 +4,11 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -50,7 +51,7 @@ public class OutboxMessage {
     private String type;
 
     // o corpo ja serializado: o relay publica exatamente estes bytes, sem reconverter
-    @Lob
+    @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
     @Column(nullable = false)
     private String payload;
 
@@ -66,12 +67,20 @@ public class OutboxMessage {
     @Column(name = "last_error", length = 500)
     private String lastError;
 
-    public OutboxMessage(String exchange, String routingKey, String type, String payload) {
+    // o contexto do trace de quem gravou a mensagem, no formato w3c (traceparent). o
+    // relay publica de outra thread, segundos depois; sem isto, a exclusao do post e a
+    // limpeza que ela provoca no outro servico virariam dois traces sem relacao. nulo
+    // quando nao havia trace (sem o agente do opentelemetry, em desenvolvimento).
+    @Column(name = "trace_parent", length = 55)
+    private String traceParent;
+
+    public OutboxMessage(String exchange, String routingKey, String type, String payload, String traceParent) {
         this.id = UUID.randomUUID().toString();
         this.exchange = exchange;
         this.routingKey = routingKey;
         this.type = type;
         this.payload = payload;
+        this.traceParent = traceParent;
         this.createdAt = Instant.now();
     }
 

@@ -1,42 +1,41 @@
-# Quarta Entrega: Refatoração para Arquitetura Orientada a Eventos
+# Última Entrega: Implantação e Manutenção em Produção
 
 ## Objetivo da Etapa
 
-Refatorar o sistema atual para adotar uma arquitetura orientada a eventos, utilizando RabbitMQ como message broker para facilitar a comunicação baseada em eventos entre os componentes do sistema.
+Preparar o sistema desenvolvido para operação através de conteinerização, monitoramento e testes.
 
 ## Subcompetências a serem Desenvolvidas
 
-### 1. Avaliação de Arquitetura Orientada a Eventos
+### 1. Implantação com Docker e Kubernetes
 
-Apresentar os prós e contras da arquitetura orientada a eventos, identificando cenários onde ela é mais vantajosa.
+- Utilizar Docker para conteinerização dos microsserviços do sistema.
+- Empregar Kubernetes para orquestrar a implantação e escalabilidade dos contêineres em um ambiente de produção.
 
-### 2. Desenvolvimento de Padrões de Mensagens
+### 2. Monitoramento de Microsserviços
 
-Criar diferentes padrões de mensagens para atender diversos casos de uso, assegurando a eficácia da comunicação entre componentes.
+Configurar ferramentas de agregação de logs e rastreamento de transações para monitorar a operação dos microsserviços, facilitando a detecção e resolução de problemas.
 
-### 3. Implementação com RabbitMQ
+### 3. Gestão de Configuração e Versionamento
 
-Implementar padrões de arquitetura orientada a eventos usando RabbitMQ, explorando suas capacidades como message broker.
+Usar Git e GitHub para controlar versões e documentar as mudanças no projeto, promovendo uma gestão eficaz do código fonte e colaboração entre desenvolvedores.
 
-### 4. Simplificação com Spring Boot
+### 4. Automação com GitHub Actions
 
-Utilizar abstrações fornecidas pelo Spring Boot para facilitar a implementação de mensagens e integração com RabbitMQ.
+Configurar e utilizar GitHub Actions para automatizar o processo de integração contínua (CI) e entrega contínua (CD), visando uma operação mais fluida e menos suscetível a erros.
 
-### 5. Refatoração do Sistema
+### 5. Testes Abrangentes
 
-Converter um sistema previamente acoplado em uma arquitetura orientada a eventos, focando em melhorar a escalabilidade, resiliência e eficiência na gestão de transações.
+Assegurar que todos os componentes do sistema funcionem corretamente tanto individualmente quanto em conjunto, desenvolvendo e aplicando testes abrangentes que cobrem diversos aspectos do sistema.
 
 ## Entregas Esperadas
 
-- **Código Fonte:** Repositório com o código do sistema refatorado para utilizar uma arquitetura orientada a eventos.
-- **Documentação:** Documentação detalhada explicando as mudanças implementadas, incluindo diagramas de arquitetura e fluxos de eventos.
-- **Demonstração de Funcionalidade:** Apresentação prática do sistema refatorado, demonstrando a eficácia da nova arquitetura em cenários simulados.
+- **Código Fonte:** Código dos microsserviços adaptados para operação em Docker/Kubernetes, com configurações necessárias para a implantação.
+- **Documentação:** Documentação atualizada incluindo detalhes de implantação, configuração de monitoramento, e processos de CI/CD.
+- **Demonstração de Operação:** Apresentação mostrando a implantação, monitoramento, e funcionamento dos microsserviços em um ambiente simulado de produção.
 
 ## Avaliação
 
-Os alunos serão avaliados com base na qualidade da implementação da arquitetura orientada a eventos, a eficiência da integração com RabbitMQ, a robustez dos padrões de mensagens desenvolvidos, e a clareza da documentação.
-
-Este projeto permite aos alunos aplicar conceitos avançados de arquitetura de sistemas em um contexto prático, preparando-os para enfrentar desafios de sistemas distribuídos em ambientes corporativos reais.
+A avaliação será baseada na correta implantação dos sistemas, eficácia das práticas de monitoramento e gestão de configuração, qualidade da automação de CI/CD, e a robustez dos testes implementados.
 
 ---
 
@@ -44,19 +43,24 @@ Este projeto permite aos alunos aplicar conceitos avançados de arquitetura de s
 
 | Subcompetência | Onde está |
 | --- | --- |
-| Avaliação de arquitetura orientada a eventos | prós, contras, quando vale e quando não vale, e o critério aplicado interação por interação, em [docs/EVENTOS.md](docs/EVENTOS.md) (seções "prós e contras" e "o critério usado aqui") |
-| Padrões de mensagens | quatro padrões de mensagem — notificação de evento (`post.deleted`), comando ponto a ponto com consumidores concorrentes (`comment.register`), transferência de estado pelo evento (`comment.*`, `reaction.*`, `engagement.*`) e pedido assíncrono de republicação (`engagement.snapshot.request`) — e três de confiabilidade: outbox transacional, consumidor idempotente, retentativa com dead letter e alternate exchange. catálogo e formato em [docs/EVENTOS.md](docs/EVENTOS.md) |
-| Implementação com RabbitMQ | topologia com exchanges topic, direct e fanout, filas duráveis, dead letter exchange, alternate exchange e publisher confirms, declarada em [MessagingConfig do monólito](backend/src/main/java/com/blog/shared/messaging/MessagingConfig.java) e [do microsserviço](engagement-service/src/main/java/com/blog/engagement/messaging/MessagingConfig.java); broker em [docker-compose.yml](docker-compose.yml) |
-| Simplificação com Spring Boot | `spring-boot-starter-amqp`, `@RabbitListener`, `Declarables`/`RabbitAdmin`, retentativa por propriedade com `RabbitRetryTemplateCustomizer`, `RabbitTemplateCustomizer`, confirmações por propriedade, `@TransactionalEventListener` e `@ServiceConnection` nos testes; tabela em [docs/EVENTOS.md](docs/EVENTOS.md) (seção "o que o spring boot simplificou") |
-| Refatoração do sistema | o comentário virou comando em fila ([CommentService](backend/src/main/java/com/blog/engagement/service/CommentService.java), [CommentCommandListener](engagement-service/src/main/java/com/blog/engagement/messaging/CommentCommandListener.java)); a limpeza de post apagado virou evento via outbox ([PostEventsOutbox](backend/src/main/java/com/blog/authoring/messaging/PostEventsOutbox.java), [OutboxRelay](backend/src/main/java/com/blog/shared/messaging/outbox/OutboxRelay.java), [PostDeletedListener](engagement-service/src/main/java/com/blog/engagement/messaging/PostDeletedListener.java)); os contadores da estante vêm de uma projeção alimentada por eventos ([EngagementSnapshotListener](backend/src/main/java/com/blog/engagement/messaging/EngagementSnapshotListener.java), [EngagementEventPublisher](engagement-service/src/main/java/com/blog/engagement/messaging/EngagementEventPublisher.java)). o efeito em escalabilidade, resiliência e transações está em [docs/EVENTOS.md](docs/EVENTOS.md) (seção "o que melhorou") |
-| Código fonte | este repositório; a interface acompanhou a mudança em [PostPage.jsx](frontend/src/pages/PostPage.jsx) (recado "na fila"), [HomePage.jsx](frontend/src/pages/HomePage.jsx) (contadores) e [ServiceBadge.jsx](frontend/src/components/ServiceBadge.jsx) (selo da fila) |
-| Documentação com diagramas de arquitetura e fluxos de eventos | [docs/EVENTOS.md](docs/EVENTOS.md): diagrama da topologia, três diagramas de sequência dos fluxos de eventos, catálogo de mensagens e tabela de falhas; visão geral atualizada em [docs/ARQUITETURA.md](docs/ARQUITETURA.md) |
-| Testes | 133 testes nos quatro serviços (eram 93), incluindo integração com um RabbitMQ real em container (Testcontainers); estratégia em [docs/EVENTOS.md](docs/EVENTOS.md) |
-| Demonstração em cenários simulados | [subir.sh](subir.sh) sobe o broker e a stack em um comando; o roteiro em [docs/EVENTOS.md](docs/EVENTOS.md) simula a queda do microsserviço, a queda do broker, a mensagem venenosa, o evento sem assinante e duas instâncias dividindo a fila |
+| Docker | um [Dockerfile](backend/Dockerfile) por serviço (multi-stage, JRE Alpine, usuário sem root, camadas do Spring Boot, agente OpenTelemetry com checksum fixo) e o [do front](frontend/Dockerfile) (nginx sem root); o ambiente simulado de produção em [docker-compose.yml](docker-compose.yml) (`--profile completo`), com PostgreSQL, RabbitMQ e observabilidade |
+| Kubernetes | manifestos em [deploy/](deploy/) (kustomize): StatefulSets com volume para PostgreSQL e RabbitMQ, sondas de startup, liveness e readiness, Secrets, rollout sem queda, autoescalonamento (HPA de 2 a 4 réplicas) e PodDisruptionBudget no engajamento; cluster kind em [scripts/k8s-subir.sh](scripts/k8s-subir.sh). rollout medido com 0 erro em 848 requisições; escala sob carga com 0 falha em 48.175 |
+| Agregação de logs e rastreamento | agente OpenTelemetry nas imagens e a stack Grafana LGTM: logs no Loki com o id do trace, traces no Tempo atravessando HTTP, RabbitMQ e o outbox, métricas no Prometheus (incluindo profundidade das filas e eventos pendentes no outbox), [dashboard "Blog — operação"](deploy/grafana/dashboards/blog-operacao.json) e [descarte de ruído no coletor](deploy/otel/otelcol-config.yaml) |
+| Gestão de configuração e versionamento | perfil `container` no config server (um arquivo para compose e Kubernetes, senhas resolvidas no pod); migrações Flyway versionadas; commits convencionais, tags por entrega, [CHANGELOG.md](CHANGELOG.md), [template de PR](.github/pull_request_template.md) e [Dependabot](.github/dependabot.yml) |
+| GitHub Actions (CI/CD) | [pipeline.yml](.github/workflows/pipeline.yml): testes com cobertura (em paralelo por serviço), validação de manifestos, compose e workflow, imagens, e2e num cluster Kubernetes efêmero, publicação no GHCR, manifesto versionado por commit, release em tag e implantação condicionada a um cluster configurado |
+| Testes abrangentes | 138 testes Java (unidade e integração, inclusive com RabbitMQ real via Testcontainers) e 15 do front (Vitest); [e2e](scripts/e2e.sh) contra a stack implantada (16 verificações, incluindo traces e logs); [teste de carga k6](scripts/carga.js); cobertura JaCoCo; validação de manifestos (kubeconform) |
+| Documentação | [docs/IMPLANTACAO.md](docs/IMPLANTACAO.md): implantação, configuração, monitoramento, CI/CD, testes, os defeitos que a implantação revelou e o roteiro de demonstração |
+| Demonstração de operação | roteiro em [docs/IMPLANTACAO.md](docs/IMPLANTACAO.md): implantação, e2e, trace atravessando a fila, atualização sem queda, escala sob carga, pod morto e broker fora do ar |
 
 ---
 
 ## Entregas anteriores
+
+### Quarta Entrega: Refatoração para Arquitetura Orientada a Eventos
+
+Refatorar o sistema para uma arquitetura orientada a eventos, usando RabbitMQ como message broker. As subcompetências cobriam a avaliação da arquitetura orientada a eventos (prós, contras e cenários), o desenvolvimento de padrões de mensagens, a implementação com RabbitMQ, a simplificação com Spring Boot e a conversão do sistema acoplado, com foco em escalabilidade, resiliência e gestão de transações.
+
+O resultado está documentado em [docs/EVENTOS.md](docs/EVENTOS.md).
 
 ### Terceira Entrega: Criação de um Microsserviço
 

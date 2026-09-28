@@ -35,9 +35,11 @@ import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.BDDMockito.willAnswer;
 import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.clearInvocations;
-import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.after;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 
@@ -93,8 +95,9 @@ class EngagementEventPublisherTest {
 
     private EngagementSnapshotMessage publicado(String routingKey) {
         ArgumentCaptor<Object> corpo = ArgumentCaptor.forClass(Object.class);
-        verify(rabbitTemplate).convertAndSend(eq(ENGAGEMENT_EXCHANGE), eq(routingKey), corpo.capture(),
-                any(MessagePostProcessor.class));
+        // a publicacao e assincrona (quinta entrega): espera ela sair, com limite
+        verify(rabbitTemplate, timeout(3000)).convertAndSend(eq(ENGAGEMENT_EXCHANGE), eq(routingKey),
+                corpo.capture(), any(MessagePostProcessor.class));
         return (EngagementSnapshotMessage) corpo.getValue();
     }
 
@@ -131,7 +134,7 @@ class EngagementEventPublisherTest {
             status.setRollbackOnly();
         });
 
-        verify(rabbitTemplate, never()).convertAndSend(anyString(), anyString(), any(Object.class),
+        verify(rabbitTemplate, after(500).never()).convertAndSend(anyString(), anyString(), any(Object.class),
                 any(MessagePostProcessor.class));
         assertThat(commentRepository.count()).isZero();
     }
@@ -197,5 +200,23 @@ class EngagementEventPublisherTest {
         EngagementSnapshotMessage mensagem = publicado("engagement.snapshot");
         assertThat(mensagem.postId()).isEqualTo(3L);
         assertThat(mensagem.comments()).isEqualTo(1);
+    }
+
+    // o broker lento (fora do ar, com a conexao esperando o timeout) nao pode segurar a
+    // resposta de quem reagiu ou comentou. medido no kubernetes antes da correcao: a
+    // reacao era gravada e o leitor recebia 503 em 3,9s
+    @Test
+    void brokerLento_naoAtrasaAResposta() {
+        willAnswer(invocacao -> {
+            Thread.sleep(2000);
+            return null;
+        }).given(rabbitTemplate).convertAndSend(anyString(), anyString(), any(Object.class),
+                any(MessagePostProcessor.class));
+
+        long inicio = System.nanoTime();
+        reactionService.react(8L, new ReactionRequest("Carla", ReactionType.CAFE));
+        long milissegundos = (System.nanoTime() - inicio) / 1_000_000;
+
+        assertThat(milissegundos).isLessThan(1000);
     }
 }

@@ -6,13 +6,14 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Index;
-import jakarta.persistence.Lob;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import jakarta.persistence.Version;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.envers.Audited;
+import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
 
@@ -56,7 +57,12 @@ public class Comment {
     @Column(name = "author_name", nullable = false)
     private String authorName; // nome livre de quem comenta, sem cadastro
 
-    @Lob
+    // texto longo. ate a quarta entrega era @Lob, e o @Lob tinha dois defeitos que o h2
+    // escondia: o envers nao o levava para a tabela de auditoria (que nascia varchar(255)
+    // e quebrava a gravacao de qualquer texto maior), e no postgres ele vira um large
+    // object (oid), guardado fora da linha, que fica orfao quando a linha e apagada.
+    // LONG32VARCHAR vira text no postgres, nas duas tabelas.
+    @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
     @Column(nullable = false)
     private String content;
 

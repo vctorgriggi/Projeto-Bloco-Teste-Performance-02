@@ -8,7 +8,7 @@
 # depende de nada instalado em quem a constroi, e sai igual na maquina de quem
 # desenvolve e no pipeline. os testes nao rodam aqui -- rodam no pipeline, antes, com
 # relatorio proprio; repeti-los em cada build de imagem so dobraria o tempo.
-FROM eclipse-temurin:21-jdk AS build
+FROM eclipse-temurin:24-jdk AS build
 WORKDIR /build
 
 # primeiro so o que define as dependencias, para a camada de download ficar em cache
@@ -24,7 +24,7 @@ RUN --mount=type=cache,target=/root/.m2 ./mvnw -B -q -DskipTests package \
 
 # ---- runtime -------------------------------------------------------------------------
 # so o jre, em alpine: a imagem final nao tem compilador, maven nem codigo-fonte.
-FROM eclipse-temurin:21-jre-alpine
+FROM eclipse-temurin:24-jre-alpine
 
 # o agente do opentelemetry instrumenta http, feign, jdbc, rabbitmq e logback sem uma
 # linha de codigo: gera os traces (que atravessam a fila), as metricas e manda os logs
